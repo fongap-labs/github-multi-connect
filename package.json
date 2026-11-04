@@ -16,7 +16,8 @@
     "cf:deploy": "node scripts/with-secondary-cloudflare.mjs deploy --secrets-file .secrets.json",
     "cf:secrets": "node scripts/with-secondary-cloudflare.mjs secret bulk .secrets.json",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "validate": "npm run check && npm test"
+    "validate": "npm run check && npm test",
+    "check:deploy": "node scripts/deployment-config.mjs preflight"
   },
   "devDependencies": {
     "wrangler": "^4.44.0",

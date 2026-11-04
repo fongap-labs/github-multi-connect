@@ -25,7 +25,7 @@ function fixture(){
     all:async()=>({results:sql.prepare(query).all(...params)}),
     run:async()=>sql.prepare(query).run(...params)
   };}};}};
-  environment={GITHUB_DB:db,GITHUB_MULTI_CONNECT_PUBLIC_URL:resource,GITHUB_MULTI_CONNECT_OAUTH_TOKEN_TTL_SECONDS:'900'};
+  environment={GITHUB_DB:db,GMC_PUBLIC_URL:resource,GMC_OAUTH_TTL:'900'};
   return sql;
 }
 async function seed(sql,{refresh=true}={}){

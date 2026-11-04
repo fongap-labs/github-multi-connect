@@ -1,0 +1,11 @@
+{
+  "schema_version": "2",
+  "adapter": "source-script",
+  "root": "",
+  "entrypoint": "scripts/deploy.sh",
+  "runner_profile": "production-deploy",
+  "ignore_docs_only": true,
+  "environments": {
+    "github-multi-connect-staging": {}
+  }
+}

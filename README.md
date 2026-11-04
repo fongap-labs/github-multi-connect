@@ -17,15 +17,15 @@
 
 | 环节 | 机制 |
 | --- | --- |
-| MCP 首次连接 | OAuth 授权码 + PKCE S256。必须在 Worker 的浏览器授权页输入独立 `MCP_APPROVAL_KEY`；绝不把密钥放在 AI 对话或 MCP 配置中 |
+| MCP 首次连接 | OAuth 授权码 + PKCE S256。必须在 Worker 的浏览器授权页输入独立 `GMC_APPROVAL_KEY`；绝不把密钥放在 AI 对话或 MCP 配置中 |
 | 客户端注册 | 动态注册；**默认禁止访问**，管理员在 `/admin` 批准后才允许 OAuth 登录 |
 | 客户端权限 | 每个客户端指定允许的 GitHub Owner；Access Token 默认 15 分钟有效（最高可配置 1 小时）；注册时声明 `refresh_token` 的客户端可获得 30 天滚动 Refresh Token，授权最长 90 天 |
 | GitHub Token 录入 | 管理员通过 `/admin` 输入；浏览器使用 RSA-OAEP-256 加密随机 AES-256-GCM 密钥，再用 AES-GCM 加密 Token；传输同时使用 HTTPS |
 | 存储 | D1 仅保存 AES-256-GCM 密文、随机 96 位 IV、密钥版本；**owner 作为认证附加数据（AAD）**防止密文在不同账号之间交换 |
-| 加密密钥 | Workers Secrets `KEYRING_JSON` 保存 AES 密钥环；`INGEST_PRIVATE_JWK` 保存浏览器加密使用的 RSA 私钥；均不写进仓库或数据库 |
+| 加密密钥 | Workers Secrets `GMC_KEYRING_JSON` 保存 AES 密钥环；`GMC_INGEST_JWK` 保存浏览器加密使用的 RSA 私钥；均不写进仓库或数据库 |
 | GitHub 请求 | Worker 按需解密，仅发送到 `https://api.github.com` 的 `Authorization: Bearer ...` 请求头，HTTPS；响应只返回受控字段 |
 | 路由 | 按 owner 大小写不敏感精确映射；未配置、停用、未授权时立即拒绝，**绝不回退其他 GitHub Token** |
-| 写操作 | 默认关闭。仅启用 `GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED=true`、为客户端批准写权限、用户在 OAuth 中同意后才可提交；**创建 Issue 仍需管理员在 `/admin` 逐次审批，10 分钟过期** |
+| 写操作 | 默认关闭。仅启用 `GMC_WRITE_MODE=true`、为客户端批准写权限、用户在 OAuth 中同意后才可提交；**创建 Issue 仍需管理员在 `/admin` 逐次审批，10 分钟过期** |
 | 管理界面 | 与 MCP 工具完全隔离；管理密钥 + HMAC 签名 HttpOnly/Secure/SameSite Cookie + CSRF 验证 + 严格 CSP |
 | 日志与响应 | 无 Token 导出接口；不记录 Header、请求体、GitHub 错误原文或异常堆栈；已知 GitHub Token 字样会尝试脱敏 |
 | 撤销 | 管理员可停用/删除 Github 连接，或撤销 MCP 客户端；撤销客户端时其访问令牌立即失效 |
@@ -41,58 +41,41 @@
 - 可运行 `npx wrangler` 的开发机器
 - GitHub fine-grained PAT；建议每个组织/账号单独使用最小仓库权限、设置有效期
 
-**不要把 GitHub PAT、ADMIN_KEY、MCP_APPROVAL_KEY、KEYRING_JSON 或 INGEST_PRIVATE_JWK 粘贴给 Agent。** 以下命令也不要求你把真实 Token 放进终端或聊天历史；GitHub Token 只在部署后的管理员网页填写。
+**不要把 GitHub PAT、GMC_ADMIN_KEY、GMC_APPROVAL_KEY、GMC_KEYRING_JSON 或 GMC_INGEST_JWK 粘贴给 Agent。** 以下命令也不要求你把真实 Token 放进终端或聊天历史；GitHub Token 只在部署后的管理员网页填写。
 
-## 部署身份：SECONDARY Cloudflare 账号
+## 部署方式：Action Worker 中央控制（v0.1.0）
 
-部署 **只能** 使用已在本地或 CI 安全密钥库设置的两个环境变量：
+GMC 采用统一的三段式命名。日常运行时配置从 Action Worker Repository Variables 读取，部署时动态生成临时 Wrangler 配置，绝不将管理员密钥、RSA 私钥或 GitHub PAT 上传至 Action Worker。
 
-- `CLOUDFLARE_ACCOUNT_ID_SECONDARY`（Cloudflare Account ID，虽然不是口令，也不应硬编码到公共仓库）
-- `CLOUDFLARE_API_TOKEN_SECONDARY`（Cloudflare API Token，**绝不写入文件、日志或对话**）
+**Action Worker → Actions Variables**（普通变量）：
 
-本项目的 `scripts/with-secondary-cloudflare.mjs` 会临时将它们映射为 Wrangler 的 `CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`，并显式屏蔽旧的 Email/API Key 认证入口。不提供主账号回退：任一变量缺失时直接失败。最小权限至少包括目标账号的 Workers 脚本部署和 D1 数据库编辑权限；按实际绑定及路由的 Cloudflare 功能增加必要权限。**这些变量仅用于部署，不属于 Worker 的运行时 Secrets，也不能当成 MCP 的客户端授权凭据。**
+| 名称 | 说明 |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID_SECONDARY` | 现有的第二 Cloudflare 账号 ID，保持既定名称 |
+| `GMC_PUBLIC_URL` | 真实 HTTPS MCP URL，以 `/mcp` 结尾 |
+| `GMC_D1_ID` | 一次创建、长期复用的 D1 UUID |
+| `GMC_WRITE_MODE` | `disabled`（默认）或 `approval` |
+| `GMC_CONTENT_MODE` | `disabled`（默认）或 `enabled` |
+| `GMC_OAUTH_TTL` | 300–3600 秒，默认 900 |
+| `GMC_ACTIVE_ID` | 活动加密密钥版本，如 `v1` |
 
-部署前先用本地命令 `npm run cf:db:create` 创建 D1，再填入对应 ID。`GITHUB_MULTI_CONNECT_PUBLIC_URL` 必须为 Worker 真实 URL。账号变量不会被自动读取为数据库 ID 或公网 URL。
+**Action Worker → Actions Secrets**：仅需 `CLOUDFLARE_API_TOKEN_SECONDARY`。中央 `deploy-secrets.json` 只允许 staging 部署任务使用该凭据，缺失时停止，不回退到主账号。
 
-## 部署
+**Cloudflare Workers → Secrets**：仅在首次初始化或受控轮换时设置五项：`GMC_ADMIN_KEY`、`GMC_APPROVAL_KEY`、`GMC_COOKIE_KEY`、`GMC_KEYRING_JSON`、`GMC_INGEST_JWK`。它们由 Cloudflare 原生管理，不进入 GitHub Actions；`GMC_ACTIVE_ID` 是 Worker Variable，由 Action Worker 注入。
 
-1. 在项目目录中安装依赖并登录 Cloudflare：
+### 一次性初始化
 
-   ```bash
-   npm install
-   # 使用下文指定的 SECONDARY 环境变量；无需 wrangler login
-   ```
+1. 在 SECONDARY Cloudflare 账号创建 `github-multi-connect` D1 数据库，在 Action Worker Variables 中填写数据库 UUID `GMC_D1_ID`。
+2. 在可信设备上只运行一次 `node scripts/generate-secrets.mjs`；离线备份 `.secrets.json`，将其中五项内容安全配置为 Cloudflare Worker Secrets。不要在 ChatGPT、MCP 工具或 GitHub 中粘贴密钥。密钥丢失可能导致旧 GitHub Token 无法解密。
+3. 在 Action Worker Variables 中填写 `GMC_PUBLIC_URL`、`GMC_ACTIVE_ID=v1` 等运行参数。初始化期间保持两个模式为 `disabled`。
+4. 确认中央 `policies/deploy-environments.json` 与 `policies/deploy-secrets.json` 已授权 `github-multi-connect-staging`。
+5. 从 Action Worker 的 **手动 · 部署服务** 启动：`source_repository=fongap-labs/github-multi-connect`、`environment=github-multi-connect-staging`；单产品 `product` 留空，`main_write_guard_bypass=false`。本环境没有 `push` 自动部署触发器。
 
-2. 在 Cloudflare 创建 D1 数据库：
+### 自动部署步骤
 
-   ```bash
-   npm run cf:db:create
-   ```
+中央校验 CI Evidence / Main Write Guard → 安全隔离 SECONDARY API Token → 配置校验 → 生成临时 Wrangler Config（不含 GMC Secrets）→ `tsc` + 测试 → Wrangler dry-run → D1 增量迁移 → 代码部署 → `/health` 构建 SHA、OAuth 元数据、未授权 MCP 401 验证。健康检查不通过会尝试回滚 Worker 代码。**D1 迁移不会被 Worker 回滚撤销**，迁移需持续保证向前兼容。
 
-   将返回的 `database_id` 填入 `wrangler.jsonc`。修改 `vars.GITHUB_MULTI_CONNECT_PUBLIC_URL` 为部署后的准确完整公网 URL，例如 `https://github-multi-connect.你的账号.workers.dev/mcp`（与访问地址必须完全一致，建议固定自定义域名）。默认禁止写操作和原始文件读取。
-
-3. **在你自己的电脑上**生成独立密钥：
-
-   ```bash
-   node scripts/generate-secrets.mjs
-   ```
-
-   生成 `.secrets.json` 与 `.dev.vars`，均已加入 `.gitignore`。**不会打印任何密钥值**。将 `.secrets.json` 安全离线备份，备份丢失后可能无法解密旧 Token。该脚本检测到已有密钥文件时会拒绝覆盖。
-
-4. 创建数据库表并部署代码与密钥：
-
-   ```bash
-   npm run cf:migrate
-   npm run cf:deploy
-   ```
-
-   `wrangler.jsonc` 中 `GITHUB_MULTI_CONNECT_PUBLIC_URL` 必须指向实际发布域名。部署完成后，检查 `GET /health` 与 `GET /.well-known/oauth-authorization-server`。
-
-5. 打开 `https://<你的域名>/admin`，使用本地 `.secrets.json` 里的 `ADMIN_KEY` 登录。请仅在浏览器登录页面输入，**不要通过 Agent 转发**。选择 owner 类型（个人/组织），粘贴对应 GitHub Token。相同 owner 再次提交即更换 Token；服务端会先向 GitHub API 验证凭据以及用户名/组织类型。
-
-6. 在支持 OAuth + PKCE + Dynamic Client Registration 的 MCP 客户端中添加地址 `https://<你的域名>/mcp`（Streamable HTTP）。客户端首次注册应在 `grant_types` 中声明 `["authorization_code", "refresh_token"]`，否则不会签发 Refresh Token。第一次尝试时会动态注册客户端，但授权页可能显示「请求被拒绝」，因为新客户端默认未批准。到 `/admin` → **授权 MCP 客户端** → 设置允许访问的 owner，批准后重试连接。浏览器跳转到 `/authorize` 时输入本地保存的 `MCP_APPROVAL_KEY`。**该密钥绝不能作为 MCP Header、环境变量发给 Agent，也无需保存在 Agent 的配置中。**
-
-7. MCP 客户端收到的短期 OAuth Access Token 只能调用 MCP，不能直接调用 GitHub。对于支持刷新且主动注册 `refresh_token` 的客户端，`/oauth/token` 会同时返回 Refresh Token；客户端自行安全保存并在到期前通过 `grant_type=refresh_token` 自动换取新令牌。每次刷新均轮换 Refresh Token，旧令牌立即作废。新增 owner、Token 轮换、停用连接都只在 `/admin` 完成。
+原始 `wrangler.jsonc` 不包含真实 D1 ID 和业务变量。部署脚本使用仓库绝对路径生成源码、迁移目录配置，Runner 临时文件以 0600 权限写入并在退出时清理。直接运行 `npm run deploy` 并不等同于 Action Worker 受控部署。
 
 ### GitHub Token 权限建议
 
@@ -107,7 +90,7 @@ node scripts/rotate-key.mjs
 npm run cf:secrets
 ```
 
-新 `KEYRING_JSON` 同时保留旧密钥与新密钥，但 `ACTIVE_KEY_ID` 改为新版本。去 `/admin` 点击「迁移旧密钥加密的数据」，直到剩余记录为零。**只有在确认所有数据已迁移、备份可信并经恢复验证后**，才考虑从密钥环删除旧密钥。不要直接替换主密钥，否则已有密文不可解密。
+新 `GMC_KEYRING_JSON` 同时保留旧密钥与新密钥，但 `GMC_ACTIVE_ID` 改为新版本。去 `/admin` 点击「迁移旧密钥加密的数据」，直到剩余记录为零。**只有在确认所有数据已迁移、备份可信并经恢复验证后**，才考虑从密钥环删除旧密钥。不要直接替换主密钥，否则已有密文不可解密。
 
 当前脚本只轮换 D1 数据加密密钥，不自动轮换 RSA 录入密钥、浏览器管理密钥或 OAuth 用户授权密钥；可在 Cloudflare Secrets 中单独更新它们。若发生泄露，必须在 GitHub 侧撤销受影响的 PAT，而不是只轮换 D1 密钥。
 
@@ -138,7 +121,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-本地实际测试 OAuth 时，将 `GITHUB_MULTI_CONNECT_PUBLIC_URL` 临时改成 `http://127.0.0.1:8787/mcp`（仅回环地址可使用 HTTP）；部署生产前务必恢复真实 HTTPS URL。
+本地实际测试 OAuth 时，将 `GMC_PUBLIC_URL` 临时改成 `http://127.0.0.1:8787/mcp`（仅回环地址可使用 HTTP）；部署生产前务必恢复真实 HTTPS URL。
 
 测试含基本加密、跨账号隔离、Token 回显防护、管理员 Cookie 签名、OAuth 授权与刷新轮换、重放撤销、并发刷新及失效恢复限制。测试不需要真实 GitHub PAT；外部 GitHub API 请求用固定假数据模拟。Node 22 的 `node:sqlite` 测试可能打印实验性 API 提示。
 
@@ -146,7 +129,7 @@ npm run dev
 
 1. **没有任何 Agent 端存储的 GitHub Token**。Agent 只获得 MCP 权限，MCP API 永不提供获取/导出 Token 的工具。
 2. **GitHub Token 在 GitHub API 调用期间确实会短暂出现在 Worker 内存中**，不能用“混淆”或“永不解密”来误导。
-3. `/authorize` 的 `MCP_APPROVAL_KEY` 必须在真正的 Worker 域名页面输入。恶意 OAuth 客户端可能诱导管理员授权，请核对客户端名、回调地址及允许的 owner。
+3. `/authorize` 的 `GMC_APPROVAL_KEY` 必须在真正的 Worker 域名页面输入。恶意 OAuth 客户端可能诱导管理员授权，请核对客户端名、回调地址及允许的 owner。
 4. **没有主张通过审计或认证**。上线前仍需实际 Cloudflare 环境的部署测试、MCP 客户端互操作测试、威胁建模及渗透测试。
 5. 使用 OAuth 登出/撤销管理中的客户端可以阻断所有已发放的 Access Token；如果 GitHub PAT 泄露，需要直接在 GitHub 端撤销。
 
@@ -162,7 +145,7 @@ npm run dev
 接入时维护者必须完成两项**外部配置**（不要把 Token 提供给 Agent）：
 
 1. 在 `github-multi-connect` 仓库 Actions Secrets 配置 `AW_DISPATCH_TOKEN`：Fine-grained PAT，**仅限** `fongap-labs/action-worker`，`Contents: Read and write`。缺失时桥接明确失败，不使用任何替代 Token。
-2. 在 `action-worker` 仓库 Actions Variables 的 `AW_REPOSITORY_POLICY` JSON 中**合并加入** `"fongap-labs/github-multi-connect": ["pr"]`，保留所有现有仓库配置。先只启用 PR 治理；`task`/`deploy`/`release-*` 在部署审核通过后单独启用。
+2. 在 `action-worker` 仓库 Actions Variables 的 `AW_REPOSITORY_POLICY` JSON 中**合并加入** `"fongap-labs/github-multi-connect": ["pr", "task", "deploy"]`，保留所有现有仓库配置。先只启用 PR 治理；`task`/`deploy`/`release-*` 在部署审核通过后单独启用。
 
 参考 [Action Worker 接入指南](https://github.com/fongap-labs/action-worker/blob/main/docs/05_INTEGRATION_GUIDE.md)。
 

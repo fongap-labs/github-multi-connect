@@ -10,7 +10,10 @@ export default {
     try {
       const url=new URL(request.url), path=url.pathname;
       if(path==='/brand/icon.svg'&&request.method==='GET')return new Response(BRAND_ICON,{headers:{'Content-Type':'image/svg+xml; charset=utf-8','Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff'}});
-      if(path==='/health'&&request.method==='GET')return json({status:'ok'});
+      if(path==='/health'&&request.method==='GET'){
+        const ready=Boolean(env.GITHUB_DB && env.GMC_PUBLIC_URL && env.GMC_ADMIN_KEY && env.GMC_APPROVAL_KEY && env.GMC_COOKIE_KEY && env.GMC_KEYRING_JSON && env.GMC_ACTIVE_ID && env.GMC_INGEST_JWK);
+        return json({status:ready?'ok':'unavailable',ready,build:env.GMC_BUILD_SHA||null},ready?200:503);
+      }
       if(path==='/')return new Response(null,{status:302,headers:{Location:'/admin','Cache-Control':'no-store'}});
       if(path==='/.well-known/oauth-protected-resource' || path==='/.well-known/oauth-protected-resource/mcp')return protectedMetadata(env);
       if(path==='/.well-known/oauth-authorization-server')return serverMetadata(env);

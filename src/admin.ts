@@ -10,7 +10,7 @@ import {renderAdminLogin,renderAdminDocument,renderClientRow,renderPendingRow,re
 
 const COOKIE='__Host-gmcp-admin';
 const locked=()=>html(renderAdminLogin({BRAND_HEAD,BRAND_NAME,BRAND_HEADER}));
-function sessionKey(env: Env) { if(!env.COOKIE_SIGNING_KEY||env.COOKIE_SIGNING_KEY.length<32) throw new Error('COOKIE_SIGNING_KEY too short');return encoder.encode(env.COOKIE_SIGNING_KEY); }
+function sessionKey(env: Env) { if(!env.GMC_COOKIE_KEY||env.GMC_COOKIE_KEY.length<32) throw new Error('GMC_COOKIE_KEY too short');return encoder.encode(env.GMC_COOKIE_KEY); }
 async function sign(env: Env,body: string) {const key=await crypto.subtle.importKey('raw',sessionKey(env),{name:'HMAC',hash:'SHA-256'},false,['sign']);return b64u(new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(body))));}
 export async function getSession(request: Request,env: Env): Promise<AdminSession | null> {
   try {
@@ -27,7 +27,7 @@ export async function adminLogin(request: Request,env: Env): Promise<Response> {
   if(!originOk(request))return json({error:'Forbidden'},403);
   if(!(await rateLimit(env,request,'admin-login',15)))return json({error:'Rate limited'},429);
   const p=await form(request);const proposed=p.get('key')||'';
-  if(!env.ADMIN_KEY||env.ADMIN_KEY.length<32||!(await equals(proposed,env.ADMIN_KEY)))return html('<p>Invalid credentials.</p>',403);
+  if(!env.GMC_ADMIN_KEY||env.GMC_ADMIN_KEY.length<32||!(await equals(proposed,env.GMC_ADMIN_KEY)))return html('<p>Invalid credentials.</p>',403);
   const data={exp:now()+1800,csrf:randomId()};const body=b64u(encoder.encode(JSON.stringify(data)));const value=body+'.'+await sign(env,body);
   return redirect('/admin',{'Set-Cookie':`${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=1800`});
 }
@@ -103,7 +103,7 @@ export async function adminApi(request: Request,env: Env,path: string): Promise<
       const row=await env.GITHUB_DB.prepare("UPDATE approval_requests SET status='denied' WHERE id=? AND status='pending' RETURNING id").bind(data.id).first();
       return row?json({ok:true,status:'denied'}):json({error:'Request already handled'},409);
     }
-    if(env.GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED!=='true')return json({error:'Write operations disabled in Worker configuration'},403);
+    if(env.GMC_WRITE_MODE!=='approval')return json({error:'Write operations disabled in Worker configuration'},403);
     const req=await env.GITHUB_DB.prepare("SELECT r.* FROM approval_requests r JOIN oauth_clients c ON r.client_id=c.client_id WHERE r.id=? AND r.status='pending' AND r.expires_at>? AND c.approved=1 AND c.allow_write=1").bind(data.id,now()).first();
     if(!req)return json({error:'Request not eligible for approval'},409);
     const client=await env.GITHUB_DB.prepare('SELECT allowed_owners FROM oauth_clients WHERE client_id=?').bind(req.client_id).first();
@@ -124,12 +124,12 @@ export async function adminApi(request: Request,env: Env,path: string): Promise<
     }
   }
   if(path==='/admin/api/rekey'){
-    const {results=[]}=await env.GITHUB_DB.prepare('SELECT * FROM github_connections WHERE key_id<>? LIMIT 50').bind(env.ACTIVE_KEY_ID).all();
+    const {results=[]}=await env.GITHUB_DB.prepare('SELECT * FROM github_connections WHERE key_id<>? LIMIT 50').bind(env.GMC_ACTIVE_ID).all();
     for(const row of results) {
       const token=await unseal(env,row);const sealed=await seal(env,row.owner,token);
       await env.GITHUB_DB.prepare('UPDATE github_connections SET key_id=?,iv=?,ciphertext=?,updated_at=? WHERE owner=? AND key_id=?').bind(sealed.key_id,sealed.iv,sealed.ciphertext,now(),row.owner,row.key_id).run();
     }
-    const remaining=await env.GITHUB_DB.prepare('SELECT COUNT(*) AS cnt FROM github_connections WHERE key_id<>?').bind(env.ACTIVE_KEY_ID).first();
+    const remaining=await env.GITHUB_DB.prepare('SELECT COUNT(*) AS cnt FROM github_connections WHERE key_id<>?').bind(env.GMC_ACTIVE_ID).first();
     return json({ok:true,processed:results.length,remaining:remaining?.cnt??0});
   }
   return json({error:'Not found'},404);
