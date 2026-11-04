@@ -227,7 +227,7 @@ export async function adminRevokeRunner(env: Env, request: Request): Promise<Res
     await env.MCP_DB.prepare(`UPDATE runner_dispatches SET status='queued',runner_id=NULL,lease_id=NULL,offered_at=NULL,
       offer_expires_at=NULL,published_at=NULL,quota_reserved=0,last_reason_code='runner_revoked'
       WHERE runner_id=? AND status='offered'`).bind(data.runnerId).run();
-    await env.MCP_DB.prepare(`UPDATE runner_dispatches SET status='held',quota_reserved=0,
+    await env.MCP_DB.prepare(`UPDATE runner_dispatches SET status='held',
       runtime_state=COALESCE(runtime_state,'side_effects_uncertain') WHERE runner_id=? AND status IN ('accepted','cancel_requested')`)
       .bind(data.runnerId).run();
     await env.MCP_DB.prepare('UPDATE runner_leases SET released_at=? WHERE runner_id=? AND released_at IS NULL').bind(at, data.runnerId).run();
