@@ -47,20 +47,19 @@
 
 目标：`fongap-labs/mcp-hub`、Cloudflare Worker `mcp-hub`、D1 数据库 `mcp-hub`（绑定 `MCP_DB`）、唯一公开域名 `https://mcp.135468.xyz`。根路径 `/` 是默认 MCP，`/github` 是独立 GitHub MCP；每个入口使用不同的 OAuth Resource 和 Access Token。管理界面仍为 `/admin`。
 
-### 环境变量与 Secrets
+### 统一交由 Action Worker 部署
 
-所有业务部署配置由**本仓库** GitHub Environment `mcp-hub-staging` 负责，Action Worker 保持中央治理和 CI：
+MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https://github.com/fongap-labs/action-worker/actions/workflows/deploy-source-script.yml) 的 `source-script` 部署合同。MCP Hub 仓库**不保留独立部署工作流**。中央先验证不可变 main SHA、CI Evidence、Main Write Guard、环境和 runner 策略，再运行审核过的 `scripts/deploy.sh`。仅允许 `mcp-hub-staging` 手动部署。
 
-| 类型 | 名称 |
+| 配置位置 | 名称 |
 | --- | --- |
-| Environment Variables | `CLOUDFLARE_ACCOUNT_ID_SECONDARY`、`MCP_D1_ID`、`MCP_PUBLIC_URL=https://mcp.135468.xyz` |
-| Environment Variables | `MCP_ACTIVE_ID`、`MCP_OAUTH_TTL`、`GMC_WRITE_MODE`、`GMC_CONTENT_MODE` |
-| Environment Secrets | `CLOUDFLARE_API_TOKEN_SECONDARY`、`MCP_ADMIN_KEY`、`MCP_APPROVAL_KEY` |
-| Environment Secrets | `MCP_COOKIE_KEY`、`MCP_KEYRING_JSON`、`MCP_INGEST_JWK` |
+| Action Worker · Actions Variables | `CLOUDFLARE_ACCOUNT_ID_SECONDARY`, `MCP_D1_ID`, `MCP_PUBLIC_URL=https://mcp.135468.xyz`, `MCP_ACTIVE_ID`, `MCP_OAUTH_TTL`, `GMC_WRITE_MODE`, `GMC_CONTENT_MODE` |
+| Action Worker · Actions Secrets | `CLOUDFLARE_API_TOKEN_SECONDARY` |
+| Action Worker · `mcp-hub-staging` Environment Secrets | `MCP_ADMIN_KEY`, `MCP_APPROVAL_KEY`, `MCP_COOKIE_KEY`, `MCP_KEYRING_JSON`, `MCP_INGEST_JWK` |
 
-`GMC_WRITE_MODE`、`GMC_CONTENT_MODE` 初始均为 `disabled`，不能为部署方便打开；密钥原文不得进入源码、日志、模型或 Action Worker 仓库。
+**跨仓库密钥不可读**：原 MCP Hub Environment Secrets 不能由中央 Job 自动获取；须由管理员在 Action Worker 的 Environment 中安全配置**原样相同**的密钥值，并保留独立离线备份。不得生成新的 keyring/JWK 覆盖既有密文，禁止回退到其他 Token。中央白名单仅允许六项必需 Secrets，安装依赖与测试的子进程不接收这些凭据。
 
-**重要：中央 Action Worker 的现有跨仓库部署 Job 不会继承源仓库 Environment Secrets。** 因此旧部署入口必须保持不可用，直到在 `mcp-hub` 仓库执行上下文中接入受审查的复用部署流程。仅仅在 GitHub 后台配置了 Environment 不代表已经能够安全部署。本 PR 不创建 Cloudflare 资源，也不执行上线。
+部署入口参数：`source_repository=fongap-labs/mcp-hub`、`environment=mcp-hub-staging`、`product` 与 `source_sha` 留空，`main_write_guard_bypass=false`。参见 [部署配置说明](docs/CENTRAL_DEPLOY.md)。本次更改不会部署 Cloudflare 或删除旧 D1。
 
 ### D1 与 OAuth 迁移
 
@@ -68,7 +67,7 @@
 2. 创建新 D1 `mcp-hub` 后，使用 `MCP_D1_ID` 保存新的 UUID；仅在确认备份、表数据与密钥无误后迁移数据。
 3. 原 `GMC_KEYRING_JSON` 对应的**值**必须原样转存为 `MCP_KEYRING_JSON`；原 RSA 私钥也必须原样转存。不要生成新密钥覆盖旧凭据。
 4. 旧 OAuth 资源 URI 不能转换成新域名的授权；客户端必须针对 `https://mcp.135468.xyz` 或 `https://mcp.135468.xyz/github` 重新授权。
-5. 通过 Action Worker 校验 CI Evidence、PR Governance、Main Write Guard 之后，才能在独立可信部署入口执行 D1 增量迁移、代码部署与构建 SHA 健康检查；D1 数据迁移不支持依赖 Worker 代码回滚恢复。
+5. 只能通过 Action Worker 手动 staging 部署，中央确认 CI Evidence 与 Main Write Guard 后执行；Worker 回滚不会撤销 D1 数据迁移。
 
 详细前置检查见 [MCP Hub 迁移说明](docs/MCP_HUB_MIGRATION.md)。
 

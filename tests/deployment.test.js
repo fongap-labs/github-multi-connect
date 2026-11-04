@@ -89,7 +89,7 @@ test('central entrypoint rejects missing runtime Secrets before npm or Cloudflar
 test('central deploy strips runtime Secrets from npm child processes',async()=>{
   const {readFileSync}=await import('node:fs');
   const script=readFileSync(new URL('../scripts/deploy.sh',import.meta.url),'utf8');
-  assert.match(script,/safe_env=\\(env\\)/);
+  assert.match(script,/safe_env=\(env\)/);
   assert.match(script,/npm install --ignore-scripts/);
   assert.match(script,/npm run validate/);
   for(const n of ['MCP_ADMIN_KEY','MCP_APPROVAL_KEY','MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK'])
