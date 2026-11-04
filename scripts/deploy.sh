@@ -49,7 +49,7 @@ node scripts/prepare-worker-secrets.mjs "$work/worker-secrets.json"
 wrangler() { node scripts/with-secondary-cloudflare.mjs "$@"; }
 wrangler deploy --dry-run --outdir "$work/build" --config "$config"
 # D1 migrations are additive and NOT reverted by a Worker rollback.
-wrangler d1 migrations apply mcp-hub --remote --config "$config" --yes
+wrangler d1 migrations apply mcp-hub --remote --config "$config"
 wrangler deploy --secrets-file "$work/worker-secrets.json" --config "$config"
 
 healthy=false
