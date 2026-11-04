@@ -1,0 +1,82 @@
+name: Deploy MCP Hub (manual staging)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Approved environment
+        required: true
+        type: choice
+        options:
+          - mcp-hub-staging
+
+permissions:
+  contents: read
+  actions: read
+  statuses: read
+
+concurrency:
+  group: mcp-hub-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify central provenance
+    if: github.ref == 'refs/heads/main' && inputs.environment == 'mcp-hub-staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Verify CI Evidence and Main Write Guard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/verify-deploy-provenance.mjs
+
+  deploy:
+    name: Deploy from source Environment
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    environment: mcp-hub-staging
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Install dependencies and validate without deployment credentials
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run validate
+      - name: Recheck immutable central provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/verify-deploy-provenance.mjs
+      - name: Deploy only after central gates and source Environment approval
+        env:
+          DEPLOY_SOURCE_SHA: ${{ github.sha }}
+          DEPLOY_ENVIRONMENT: mcp-hub-staging
+          CLOUDFLARE_ACCOUNT_ID_SECONDARY: ${{ vars.CLOUDFLARE_ACCOUNT_ID_SECONDARY }}
+          CLOUDFLARE_API_TOKEN_SECONDARY: ${{ secrets.CLOUDFLARE_API_TOKEN_SECONDARY }}
+          MCP_D1_ID: ${{ vars.MCP_D1_ID }}
+          MCP_PUBLIC_URL: ${{ vars.MCP_PUBLIC_URL }}
+          MCP_ACTIVE_ID: ${{ vars.MCP_ACTIVE_ID }}
+          MCP_OAUTH_TTL: ${{ vars.MCP_OAUTH_TTL }}
+          GMC_WRITE_MODE: ${{ vars.GMC_WRITE_MODE }}
+          GMC_CONTENT_MODE: ${{ vars.GMC_CONTENT_MODE }}
+          MCP_ADMIN_KEY: ${{ secrets.MCP_ADMIN_KEY }}
+          MCP_APPROVAL_KEY: ${{ secrets.MCP_APPROVAL_KEY }}
+          MCP_COOKIE_KEY: ${{ secrets.MCP_COOKIE_KEY }}
+          MCP_KEYRING_JSON: ${{ secrets.MCP_KEYRING_JSON }}
+          MCP_INGEST_JWK: ${{ secrets.MCP_INGEST_JWK }}
+        run: bash scripts/deploy.sh
