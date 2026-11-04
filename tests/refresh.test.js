@@ -20,6 +20,7 @@ function fixture(){
   const sql=new DatabaseSync(':memory:');
   sql.exec(readFileSync(new URL('../migrations/0001_init.sql',import.meta.url),'utf8'));
   sql.exec(readFileSync(new URL('../migrations/0002_refresh_token_rotation.sql',import.meta.url),'utf8'));
+  sql.exec(readFileSync(new URL('../migrations/0003_runner_registry_leases.sql',import.meta.url),'utf8'));
   const db={prepare(query){return {bind(...params){return {
     first:async()=>sql.prepare(query).get(...params)||null,
     all:async()=>({results:sql.prepare(query).all(...params)}),
