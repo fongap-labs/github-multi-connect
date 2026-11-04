@@ -1,19 +1,20 @@
-import {renderOAuthForm,OAUTH_TITLE,OAUTH_DENIED_TITLE,OAUTH_DENIED_BODY} from './i18n/zh-CN.js';
-import {now,json,html,escapeHtml,randomId,sha,equals,cookie,originOk,form,bodyJson} from './util.js';
-import {issueAuthorizationTokens,rotateRefreshToken,revokeOAuthToken,cleanOAuthGrants} from './tokens.js';
-import {BRAND_NAME,BRAND_HEAD,BRAND_HEADER} from './brand.js';
+import type { Env, McpAuth } from './types.ts';
+import {renderOAuthForm,OAUTH_TITLE,OAUTH_DENIED_TITLE,OAUTH_DENIED_BODY} from './i18n/zh-CN.ts';
+import {now,json,html,escapeHtml,randomId,sha,equals,cookie,originOk,form,bodyJson} from './util.ts';
+import {issueAuthorizationTokens,rotateRefreshToken,revokeOAuthToken,cleanOAuthGrants} from './tokens.ts';
+import {BRAND_NAME,BRAND_HEAD,BRAND_HEADER} from './brand.ts';
 
 const SCOPES=['mcp:read','mcp:write'];
 const BIND='__Host-mcp-auth-binding';
 const b64urlRe=/^[A-Za-z0-9_-]{43}$/;
-const sanitizeName=s=>typeof s==='string' ? s.slice(0,100) : '';
-const oauthError=(error,status=400)=>json({error},status);
-function getBase(env) {return new URL(env.GITHUB_MULTI_CONNECT_PUBLIC_URL).origin;}
-export function resource(env) { const u=new URL(env.GITHUB_MULTI_CONNECT_PUBLIC_URL); if(u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname)) throw new Error('GITHUB_MULTI_CONNECT_PUBLIC_URL must use HTTPS'); if(u.pathname!=='/mcp') throw new Error('GITHUB_MULTI_CONNECT_PUBLIC_URL must end in /mcp');return u.href; }
-export function protectedMetadata(env) {return json({resource:resource(env),authorization_servers:[getBase(env)],scopes_supported:['mcp:read']});}
-export function serverMetadata(env) {const base=getBase(env);return json({issuer:base,authorization_endpoint:base+'/authorize',token_endpoint:base+'/oauth/token',registration_endpoint:base+'/oauth/register',revocation_endpoint:base+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],token_endpoint_auth_methods_supported:['none'],code_challenge_methods_supported:['S256'],scopes_supported:SCOPES});}
-export function challenge(env) {return json({error:'Authentication required'},401,{'WWW-Authenticate':'Bearer resource_metadata="'+getBase(env)+'/.well-known/oauth-protected-resource", scope="mcp:read"'});}
-function validRedirect(value) {
+const sanitizeName=(s: unknown)=>typeof s==='string' ? s.slice(0,100) : '';
+const oauthError=(error: string,status=400)=>json({error},status);
+function getBase(env: Env) {return new URL(env.GITHUB_MULTI_CONNECT_PUBLIC_URL).origin;}
+export function resource(env: Env) { const u=new URL(env.GITHUB_MULTI_CONNECT_PUBLIC_URL); if(u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname)) throw new Error('GITHUB_MULTI_CONNECT_PUBLIC_URL must use HTTPS'); if(u.pathname!=='/mcp') throw new Error('GITHUB_MULTI_CONNECT_PUBLIC_URL must end in /mcp');return u.href; }
+export function protectedMetadata(env: Env) {return json({resource:resource(env),authorization_servers:[getBase(env)],scopes_supported:['mcp:read']});}
+export function serverMetadata(env: Env) {const base=getBase(env);return json({issuer:base,authorization_endpoint:base+'/authorize',token_endpoint:base+'/oauth/token',registration_endpoint:base+'/oauth/register',revocation_endpoint:base+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],token_endpoint_auth_methods_supported:['none'],code_challenge_methods_supported:['S256'],scopes_supported:SCOPES});}
+export function challenge(env: Env) {return json({error:'Authentication required'},401,{'WWW-Authenticate':'Bearer resource_metadata="'+getBase(env)+'/.well-known/oauth-protected-resource", scope="mcp:read"'});}
+function validRedirect(value: unknown): value is string {
   if(typeof value!=='string'||value.length>1024) return false;
   try {
     const u=new URL(value);
@@ -22,14 +23,14 @@ function validRedirect(value) {
     return u.protocol==='http:'&&['localhost','127.0.0.1','[::1]','::1'].includes(u.hostname);
   } catch {return false;}
 }
-function validClientName(s) {return typeof s==='string'&&s.length>=1&&s.length<=100&& !/[\r\n\x00-\x1f]/.test(s);}
-export async function rateLimit(env,request,kind,max=30) {
+function validClientName(s: unknown): s is string {return typeof s==='string'&&s.length>=1&&s.length<=100&& !/[\r\n\x00-\x1f]/.test(s);}
+export async function rateLimit(env: Env,request: Request,kind: string,max=30): Promise<boolean> {
   const ip=request.headers.get('CF-Connecting-IP')||'local';
   const ts=Math.floor(now()/3600);const bucket=await sha(kind+':'+ip+':'+ts);
   const row=await env.GITHUB_DB.prepare('INSERT INTO rate_limits(bucket,hits,expires_at) VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET hits=hits+1 RETURNING hits').bind(bucket,(ts+2)*3600).first();
   return (row?.hits||999999)<=max;
 }
-export async function registerClient(request,env) {
+export async function registerClient(request: Request,env: Env): Promise<Response> {
   if(!(await rateLimit(env,request,'oauth-register',15))) return oauthError('rate_limited',429);
   let body;try{body=await bodyJson(request,4096);}catch{return oauthError('invalid_client_metadata');}
   if(body.token_endpoint_auth_method && body.token_endpoint_auth_method!=='none')return oauthError('invalid_client_metadata');
@@ -44,8 +45,8 @@ export async function registerClient(request,env) {
   return json({client_id:clientId,client_name:body.client_name,redirect_uris:body.redirect_uris,grant_types:requestedGrants,response_types:['code'],token_endpoint_auth_method:'none'},201);
 }
 function errorPage(){return html('<!doctype html><meta charset="utf-8"><title>Invalid request</title><p>Authorization request rejected.</p>',400);}
-const page=(title,body)=>`<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${BRAND_HEAD}<title>${BRAND_NAME} · ${escapeHtml(title)}</title><link rel="stylesheet" href="/admin/app.css"><main>${BRAND_HEADER}<h2>${escapeHtml(title)}</h2>${body}</main></html>`;
-export async function authorizeGet(request,env) {
+const page=(title: string,body: string)=>`<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${BRAND_HEAD}<title>${BRAND_NAME} · ${escapeHtml(title)}</title><link rel="stylesheet" href="/admin/app.css"><main>${BRAND_HEADER}<h2>${escapeHtml(title)}</h2>${body}</main></html>`;
+export async function authorizeGet(request: Request,env: Env): Promise<Response> {
   if(!(await rateLimit(env,request,'oauth-authorize',60)))return errorPage();
   const u=new URL(request.url);const p=u.searchParams;
   const clientId=p.get('client_id')||'';const redirectUri=p.get('redirect_uri')||'';
@@ -59,7 +60,7 @@ export async function authorizeGet(request,env) {
   const body=renderOAuthForm({escapeHtml,client,redirectUri,allowedOwners:JSON.parse(client.allowed_owners),id,allowWrite:asked.includes('mcp:write')});
   return html(page(OAUTH_TITLE,body),200,{'Set-Cookie':`${BIND}=${bind}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`});
 }
-export async function authorizePost(request,env) {
+export async function authorizePost(request: Request,env: Env): Promise<Response> {
   if(!originOk(request))return errorPage();
   if(!(await rateLimit(env,request,'oauth-approval-attempt',15))) return errorPage();
   let p;try{p=await form(request);}catch{return errorPage();}
@@ -76,7 +77,7 @@ export async function authorizePost(request,env) {
   const dest=new URL(row.redirect_uri);dest.searchParams.set('code',code);if(row.state)dest.searchParams.set('state',row.state);dest.searchParams.set('iss',getBase(env));
   return new Response(null,{status:302,headers:{'Location':dest.toString(),'Cache-Control':'no-store','Referrer-Policy':'no-referrer','Set-Cookie':`${BIND}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`}});
 }
-export async function tokenEndpoint(request,env) {
+export async function tokenEndpoint(request: Request,env: Env): Promise<Response> {
   if(!(await rateLimit(env,request,'oauth-token',600))) return oauthError('rate_limited',429);
   let p;try{p=await form(request);}catch{return oauthError('invalid_request');}
   const grantType=p.get('grant_type');
@@ -91,7 +92,7 @@ export async function tokenEndpoint(request,env) {
   if(!client?.approved||client.auth_version!==row.auth_version)return oauthError('invalid_grant');
   return issueAuthorizationTokens(env,row,client);
 }
-export async function revokeToken(request,env){
+export async function revokeToken(request: Request,env: Env): Promise<Response>{
   if(!(await rateLimit(env,request,'oauth-revoke',300)))return oauthError('rate_limited',429);
   let p;try{p=await form(request);}catch{return oauthError('invalid_request');}
   const token=p.get('token')||'';
@@ -99,21 +100,21 @@ export async function revokeToken(request,env){
   // RFC 7009: do not disclose whether the submitted token existed.
   return new Response(null,{status:200,headers:{'Cache-Control':'no-store','Pragma':'no-cache'}});
 }
-export async function validateMcpToken(request,env) {
+export async function validateMcpToken(request: Request,env: Env): Promise<McpAuth | null> {
   const value=request.headers.get('Authorization')||'';
   const matched=/^Bearer ([A-Za-z0-9_-]{43})$/.exec(value);if(!matched)return null;
   const row=await env.GITHUB_DB.prepare(`SELECT t.client_id,t.resource,t.scope,t.expires_at,t.grant_id,t.auth_version AS token_auth_version,
     c.approved,c.allowed_owners,c.allow_write,c.auth_version AS client_auth_version,g.revoked_at AS grant_revoked_at,g.absolute_expires_at,g.scope AS grant_scope
     FROM oauth_access_tokens t JOIN oauth_clients c ON t.client_id=c.client_id
     LEFT JOIN oauth_grants g ON t.grant_id=g.grant_id WHERE t.token_hash=?`)
-    .bind(await sha(matched[1])).first();
+    .bind(await sha(matched[1] ?? '')).first();
   if(!row||!row.approved||row.token_auth_version!==row.client_auth_version||row.expires_at<=now()||row.resource!==resource(env)||
     (row.grant_id!==null&&(row.absolute_expires_at===null||row.absolute_expires_at<=now()||row.grant_revoked_at!==null)))return null;
   const grants=new Set((row.grant_scope??row.scope).split(' '));
   const scopes=row.scope.split(' ').filter(s=>grants.has(s)&&(s!=='mcp:write'||row.allow_write===1));
   return {clientId:row.client_id,scopes,allowedOwners:JSON.parse(row.allowed_owners)};
 }
-export async function cleanExpired(env) {
+export async function cleanExpired(env: Env): Promise<void> {
   const ts=now();
   for(const table of ['oauth_codes','oauth_auth_requests','oauth_access_tokens','rate_limits']) await env.GITHUB_DB.prepare('DELETE FROM '+table+' WHERE expires_at<?').bind(ts).run();
   await cleanOAuthGrants(env);

@@ -1,12 +1,15 @@
-import {BRAND_NAME,BRAND_SOURCE,BRAND_VERSION} from './brand.js';
-import {json,validOwner,randomId,now} from './util.js';
-import {githubPath,getOwnerToken,apiFetch,summarize,redact,PublicError} from './github.js';
+import type { Env, McpAuth, DataObject } from './types.ts';
+import type { GitHubKind } from './github.ts';
+type RpcId = string | number | null;
+import {BRAND_NAME,BRAND_SOURCE,BRAND_VERSION} from './brand.ts';
+import {json,validOwner,validRepo,randomId,now} from './util.ts';
+import {githubPath,getOwnerToken,apiFetch,summarize,redact,PublicError} from './github.ts';
 
 const S={type:'string'};const N={type:'integer',minimum:1};
-function spec(name,description,props,required=['owner','repo']){
+function spec(name: string,description: string,props: Record<string, unknown>,required: string[]=['owner','repo']){
   return {name,description,inputSchema:{type:'object',properties:props,required,additionalProperties:false}};
 }
-function availableTools(env,scopes){
+function availableTools(env: Env,scopes: string[]){
   const tools=[
     spec('github_available_owners','List GitHub usernames/organizations configured in this MCP; NEVER reveals tokens.',{},[]),
     spec('github_get_repository','Read GitHub repository metadata using the token mapped to owner.',{owner:S,repo:S}),
@@ -20,12 +23,12 @@ function availableTools(env,scopes){
   tools.push(spec('github_operation_status','Check the status of a write request submitted by this MCP client.',{request_id:S},['request_id']));
   return tools;
 }
-function rpcResult(id,result){return {jsonrpc:'2.0',id,result};}
-function rpcError(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
-function resultText(data){return {content:[{type:'text',text:redact(JSON.stringify(data))}]};}
-function toolError(message){return {isError:true,content:[{type:'text',text:redact(message)}]};}
+function rpcResult(id: RpcId,result: unknown){return {jsonrpc:'2.0',id,result};}
+function rpcError(id: RpcId,code: number,message: string){return {jsonrpc:'2.0',id,error:{code,message}};}
+function resultText(data: unknown){return {content:[{type:'text',text:redact(JSON.stringify(data))}]};}
+function toolError(message: string){return {isError:true,content:[{type:'text',text:redact(message)}]};}
 
-async function callTool(name,args,env,auth) {
+async function callTool(name: string,args: DataObject,env: Env,auth: McpAuth): Promise<unknown> {
   const scopes=auth.scopes;
   if(!args||typeof args!=='object'||Array.isArray(args))throw new PublicError('Invalid arguments');
   if(name==='github_available_owners'){
@@ -38,24 +41,25 @@ async function callTool(name,args,env,auth) {
     if(!row||!auth.allowedOwners.includes(row.owner)||row.expires_at<=now()&&row.status==='pending')throw new PublicError('Operation not available');
     return {owner:row.owner,repo:row.repo,title:row.title,status:row.status,result:row.result_json?JSON.parse(row.result_json):null};
   }
-  const types={github_get_repository:'repo',github_list_issues:'issues',github_get_issue:'issue',github_list_pull_requests:'pulls',github_get_pull_request:'pull',github_read_file:'file'};
+  const types: Record<string, GitHubKind | undefined>={github_get_repository:'repo',github_list_issues:'issues',github_get_issue:'issue',github_list_pull_requests:'pulls',github_get_pull_request:'pull',github_read_file:'file'};
   const kind=types[name];
   if(kind==='file'&&env.GITHUB_MULTI_CONNECT_CAN_READ_FILE_CONTENT!=='true')throw new PublicError('File reading is disabled');
   if(!kind&&name!=='github_create_issue')throw new PublicError('Unknown tool');
   if(name==='github_create_issue'&&!(env.GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED==='true'&&scopes.includes('mcp:write')))throw new PublicError('Write access is disabled');
   if(!validOwner(args.owner)||!auth.allowedOwners.includes(args.owner.toLowerCase()))throw new PublicError('Owner not authorized for this MCP client');
-  const path=githubPath({...args,kind:kind||'repo'});
+  if(!validRepo(args.repo))throw new PublicError('Invalid repository name');
+  const path=githubPath({owner:args.owner,repo:args.repo,kind:kind||'repo',number:typeof args.number==='number'?args.number:undefined,path:typeof args.path==='string'?args.path:undefined,ref:typeof args.ref==='string'?args.ref:undefined,state:typeof args.state==='string'?args.state:undefined,per_page:typeof args.per_page==='number'?args.per_page:undefined});
   if(name==='github_create_issue'){
-    if(typeof args.title!=='string'||args.title.length<1||args.title.length>256||typeof (args.body??'')!=='string'||(args.body??'').length>10000)throw new PublicError('Invalid issue title or body');
+    if(typeof args.title!=='string'||args.title.length<1||args.title.length>256||typeof (args.body??'')!=='string'||String(args.body??'').length>10000)throw new PublicError('Invalid issue title or body');
     const requestId=randomId();
-    await env.GITHUB_DB.prepare('INSERT INTO approval_requests(id,client_id,owner,repo,title,body,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?, ?,?)').bind(requestId,auth.clientId,args.owner.toLowerCase(),args.repo,args.title,args.body||'','pending',now(),now()+600).run();
+    await env.GITHUB_DB.prepare('INSERT INTO approval_requests(id,client_id,owner,repo,title,body,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?, ?,?)').bind(requestId,auth.clientId,args.owner.toLowerCase(),args.repo,args.title,String(args.body||''),'pending',now(),now()+600).run();
     return {status:'pending',request_id:requestId,message:'Administrator approval is required. Use github_operation_status to check later.'};
   }
   const token=await getOwnerToken(env,args.owner);
   const data=await apiFetch(token,path);
-  return summarize(kind,data);
+  return summarize(kind||'repo',data);
 }
-export async function processMcp(request,env,auth){
+export async function processMcp(request: Request,env: Env,auth: McpAuth): Promise<Response>{
   if(request.method==='GET'||request.method==='DELETE')return new Response(null,{status:405,headers:{'Allow':'POST','Cache-Control':'no-store'}});
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
   if(!(request.headers.get('Content-Type')||'').toLowerCase().includes('application/json'))return json({error:'Content type must be application/json'},415);

@@ -1,4 +1,5 @@
-import {randomId,sha,now,json} from './util.js';
+import type { Env, DbRow } from './types.ts';
+import {randomId,sha,now,json} from './util.ts';
 
 export const ACCESS_TOKEN_TTL_DEFAULT=900;
 export const REFRESH_TOKEN_IDLE_SECONDS=30*86400;
@@ -6,18 +7,18 @@ export const GRANT_ABSOLUTE_SECONDS=90*86400;
 const refreshTokenRe=/^mcrt_[A-Za-z0-9_-]{43}$/;
 const accessTokenRe=/^[A-Za-z0-9_-]{43}$/;
 
-function ttl(env) {
+function ttl(env: Env) {
   const configured=Number(env.GITHUB_MULTI_CONNECT_OAUTH_TOKEN_TTL_SECONDS);
   return Number.isFinite(configured) && configured >=300 && configured<=3600 ? Math.trunc(configured) : ACCESS_TOKEN_TTL_DEFAULT;
 }
-function bearerResponse(accessToken,ttlSeconds,scope,refreshToken,refreshExpiresAt){
+function bearerResponse(accessToken: string,ttlSeconds: number,scope: string,refreshToken: string | null,refreshExpiresAt: number | null){
   return json({
     access_token:accessToken, token_type:'Bearer',expires_in:ttlSeconds,scope,
-    ...(refreshToken?{refresh_token:refreshToken,refresh_token_expires_in:Math.max(0,refreshExpiresAt-now())}:{})
+    ...(refreshToken?{refresh_token:refreshToken,refresh_token_expires_in:Math.max(0,(refreshExpiresAt ?? now())-now())}:{})
   },200,{'Pragma':'no-cache'});
 }
-const oauthError=(error,status=400)=>json({error},status,{'Pragma':'no-cache'});
-function restrictedScope(scope,client,requested){
+const oauthError=(error: string,status=400)=>json({error},status,{'Pragma':'no-cache'});
+function restrictedScope(scope: string,client: Pick<DbRow,'approved'|'allow_write'>,requested: string | null): string | null{
   const scopes=scope.split(' ').filter(Boolean);
   if(!client.approved || !scopes.includes('mcp:read'))return null;
   if(!client.allow_write) {
@@ -33,13 +34,13 @@ function restrictedScope(scope,client,requested){
 
 // A grant exists only for public OAuth clients that explicitly registered
 // support for refresh_token. No long-lived secret is ever returned via MCP tools.
-export async function issueAuthorizationTokens(env,authCode,client){
+export async function issueAuthorizationTokens(env: Env,authCode: DbRow,client: DbRow): Promise<Response>{
   const issuedAt=now(), lifetime=ttl(env);
   const scope=restrictedScope(authCode.scope,client,null);
   if(!scope)return oauthError('invalid_grant');
   const accessToken=randomId();
   const refreshEnabled=JSON.parse(client.grant_types).includes('refresh_token');
-  let grantId=null,refreshToken=null,refreshExpiresAt=null;
+  let grantId: string | null=null,refreshToken: string | null=null,refreshExpiresAt: number | null=null;
   if(refreshEnabled){
     grantId=randomId(); refreshToken='mcrt_'+randomId();
     const absolute=issuedAt+GRANT_ABSOLUTE_SECONDS;
@@ -57,7 +58,7 @@ export async function issueAuthorizationTokens(env,authCode,client){
 // Rotation is a single-winner compare-and-swap. A reused, already-consumed
 // token revokes its entire family, including previously minted access tokens.
 // Clients MUST serialize refresh requests; ambiguous concurrent use fails closed.
-export async function rotateRefreshToken(env,p){
+export async function rotateRefreshToken(env: Env,p: URLSearchParams): Promise<Response>{
   const refreshToken=p.get('refresh_token')||'';
   const clientId=p.get('client_id')||'';
   if(!refreshTokenRe.test(refreshToken)||!/^mcp_[A-Za-z0-9_-]{43}$/.test(clientId))return oauthError('invalid_grant');
@@ -68,7 +69,7 @@ export async function rotateRefreshToken(env,p){
     FROM oauth_refresh_tokens t JOIN oauth_grants g ON g.grant_id=t.grant_id
     JOIN oauth_clients c ON c.client_id=g.client_id WHERE t.token_hash=?`)
     .bind(tokenHash).first();
-  if(!row||row.client_id!==clientId||!JSON.parse(row.grant_types).includes('refresh_token'))return oauthError('invalid_grant');
+  if(!row||row.grant_id===null||row.absolute_expires_at===null||row.client_id!==clientId||!JSON.parse(row.grant_types).includes('refresh_token'))return oauthError('invalid_grant');
   // The client cannot change audience or request expanded privileges.
   if(p.has('resource')&&p.get('resource')!==row.resource)return oauthError('invalid_target');
   if(row.revoked_at!==null||!row.approved||row.grant_auth_version!==row.client_auth_version||row.absolute_expires_at<=current)return oauthError('invalid_grant');
@@ -111,31 +112,31 @@ export async function rotateRefreshToken(env,p){
   return bearerResponse(newAccess,lifetime,scope,newRefresh,nextRefreshExpiresAt);
 }
 
-export async function revokeGrant(env,grantId,ts=now()){
+export async function revokeGrant(env: Env,grantId: string,ts=now()): Promise<void>{
   await env.GITHUB_DB.prepare('UPDATE oauth_grants SET revoked_at=? WHERE grant_id=? AND revoked_at IS NULL')
     .bind(ts,grantId).run();
   // The API checks grant.revoked_at so these deletes are defense in depth.
   await env.GITHUB_DB.prepare('DELETE FROM oauth_access_tokens WHERE grant_id=?').bind(grantId).run();
 }
-export async function revokeOAuthToken(env,token,clientId){
+export async function revokeOAuthToken(env: Env,token: string,clientId: string | null): Promise<void>{
   if(typeof clientId!=='string'||!/^mcp_[A-Za-z0-9_-]{43}$/.test(clientId))return;
   if(refreshTokenRe.test(token)){
     const row=await env.GITHUB_DB.prepare('SELECT grant_id FROM oauth_refresh_tokens WHERE token_hash=? AND client_id=?')
       .bind(await sha(token),clientId).first();
-    if(row)await revokeGrant(env,row.grant_id);
+    if(row?.grant_id)await revokeGrant(env,row.grant_id);
   }else if(accessTokenRe.test(token)){
     await env.GITHUB_DB.prepare('DELETE FROM oauth_access_tokens WHERE token_hash=? AND client_id=?')
       .bind(await sha(token),clientId).run();
   }
 }
-export async function revokeClientTokens(env,clientId){
+export async function revokeClientTokens(env: Env,clientId: string): Promise<void>{
   await env.GITHUB_DB.prepare('UPDATE oauth_grants SET revoked_at=? WHERE client_id=? AND revoked_at IS NULL')
     .bind(now(),clientId).run();
   await env.GITHUB_DB.prepare('DELETE FROM oauth_access_tokens WHERE client_id=?').bind(clientId).run();
   await env.GITHUB_DB.prepare('DELETE FROM oauth_codes WHERE client_id=?').bind(clientId).run();
   await env.GITHUB_DB.prepare('DELETE FROM oauth_auth_requests WHERE client_id=?').bind(clientId).run();
 }
-export async function cleanOAuthGrants(env){
+export async function cleanOAuthGrants(env: Env): Promise<void>{
   const cutoff=now()-7*86400;
   // Keep consumed refresh hashes until family closure for replay detection.
   await env.GITHUB_DB.prepare(`DELETE FROM oauth_refresh_tokens WHERE grant_id IN

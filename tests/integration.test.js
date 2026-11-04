@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import worker from '../src/index.js';
-import {getSession} from '../src/admin.js';
-import {ingestionPublicJwk} from '../src/crypto.js';
-import {sha,b64} from '../src/util.js';
+import worker from '../src/index.ts';
+import {getSession} from '../src/admin.ts';
+import {ingestionPublicJwk} from '../src/crypto.ts';
+import {sha,b64} from '../src/util.ts';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 
 function d1(){

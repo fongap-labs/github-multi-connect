@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
-import {seal,unseal,decryptIngested,ingestionPublicJwk} from '../src/crypto.js';
-import {getOwnerToken,githubPath,redact,PublicError} from '../src/github.js';
-import {getSession,adminLogin} from '../src/admin.js';
-import {processMcp} from '../src/mcp.js';
-import {validateMcpToken} from '../src/oauth.js';
-import {sha,b64} from '../src/util.js';
+import {seal,unseal,decryptIngested,ingestionPublicJwk} from '../src/crypto.ts';
+import {getOwnerToken,githubPath,redact,PublicError} from '../src/github.ts';
+import {getSession,adminLogin} from '../src/admin.ts';
+import {processMcp} from '../src/mcp.ts';
+import {validateMcpToken} from '../src/oauth.ts';
+import {sha,b64} from '../src/util.ts';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const key=b64(crypto.getRandomValues(new Uint8Array(32)));
 const baseEnv={KEYRING_JSON:JSON.stringify({v1:key}),ACTIVE_KEY_ID:'v1'};

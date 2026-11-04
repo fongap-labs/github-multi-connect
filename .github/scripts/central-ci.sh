@@ -8,14 +8,6 @@ if [[ -z "$TARGET_ROOT" || ! -d "$TARGET_ROOT" ]]; then
 fi
 cd "$TARGET_ROOT"
 node --version
-node --check src/index.js
-node --check src/admin.js
-node --check src/admin-ui.js
-node --check src/brand.js
-node --check src/crypto.js
-node --check src/github.js
-node --check src/mcp.js
-node --check src/oauth.js
-node --check src/tokens.js
-node --check src/util.js
-node --experimental-sqlite --test tests/*.test.js
+# TypeScript is a development-only compiler; no extra runtime framework is shipped.
+npm install --no-audit --no-fund --ignore-scripts
+npm run validate

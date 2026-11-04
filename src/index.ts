@@ -1,11 +1,12 @@
-import {json} from './util.js';
-import {BRAND_ICON} from './brand.js';
-import {protectedMetadata,serverMetadata,registerClient,authorizeGet,authorizePost,tokenEndpoint,revokeToken,validateMcpToken,challenge,cleanExpired} from './oauth.js';
-import {adminRoute} from './admin.js';
-import {processMcp} from './mcp.js';
+import type { Env } from './types.ts';
+import {json} from './util.ts';
+import {BRAND_ICON} from './brand.ts';
+import {protectedMetadata,serverMetadata,registerClient,authorizeGet,authorizePost,tokenEndpoint,revokeToken,validateMcpToken,challenge,cleanExpired} from './oauth.ts';
+import {adminRoute} from './admin.ts';
+import {processMcp} from './mcp.ts';
 
 export default {
-  async fetch(request,env) {
+  async fetch(request: Request,env: Env): Promise<Response> {
     try {
       const url=new URL(request.url), path=url.pathname;
       if(path==='/brand/icon.svg'&&request.method==='GET')return new Response(BRAND_ICON,{headers:{'Content-Type':'image/svg+xml; charset=utf-8','Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff'}});
@@ -29,5 +30,5 @@ export default {
       return json({error:'Internal error'},500);
     }
   },
-  async scheduled(_event,env) {try{await cleanExpired(env);}catch{/* No credentials or raw errors in logs. */}}
+  async scheduled(_event: unknown,env: Env): Promise<void> {try{await cleanExpired(env);}catch{/* No credentials or raw errors in logs. */}}
 };

@@ -165,3 +165,7 @@ npm run dev
 2. 在 `action-worker` 仓库 Actions Variables 的 `AW_REPOSITORY_POLICY` JSON 中**合并加入** `"fongap-labs/github-multi-connect": ["pr"]`，保留所有现有仓库配置。先只启用 PR 治理；`task`/`deploy`/`release-*` 在部署审核通过后单独启用。
 
 参考 [Action Worker 接入指南](https://github.com/fongap-labs/action-worker/blob/main/docs/05_INTEGRATION_GUIDE.md)。
+
+## TypeScript runtime (v0.1.0)
+
+The Cloudflare Worker runtime is implemented in strict TypeScript (`src/index.ts`). Wrangler builds the Worker directly; Node deployment scripts remain `.mjs`. The browser-facing `/admin/app.js` URL, OAuth endpoints, MCP tool identifiers, database schema and token formats are unchanged. Install dependencies with `npm install`, then run `npm run typecheck` and `npm test`; the centralized Action Worker CI runs both checks. The test runner uses Node.js 22.16+ type stripping to import `.ts` modules. See [migration notes](docs/TYPESCRIPT_MIGRATION.md).
