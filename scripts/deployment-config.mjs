@@ -37,7 +37,7 @@ export function loadDeployConfig(env) {
   if (environment !== 'github-multi-connect-staging') errors.push('Only approved github-multi-connect-staging environment may deploy');
   try {
     const url = new URL(publicUrl);
-    if (url.protocol !== 'https:' || url.pathname !== '/mcp' || url.search || url.hash || url.username || url.password || url.hostname !== 'gmc.135468.xyz')) throw Error();
+    if (url.protocol !== 'https:' || url.pathname !== '/mcp' || url.search || url.hash || url.username || url.password || url.hostname !== 'gmc.135468.xyz') throw Error();
   } catch {errors.push('GMC_PUBLIC_URL must be exactly https://gmc.135468.xyz/mcp');}
   if (errors.length) throw new Error(`Deployment configuration invalid: ${errors.join('; ')}`);
   return {account, token, databaseId, publicUrl, activeId, buildSha, writeMode, contentMode, oauthTtl, environment};
