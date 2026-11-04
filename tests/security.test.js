@@ -9,7 +9,7 @@ import {validateMcpToken} from '../src/oauth.ts';
 import {sha,b64} from '../src/util.ts';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const key=b64(crypto.getRandomValues(new Uint8Array(32)));
-const baseEnv={KEYRING_JSON:JSON.stringify({v1:key}),ACTIVE_KEY_ID:'v1'};
+const baseEnv={GMC_KEYRING_JSON:JSON.stringify({v1:key}),GMC_ACTIVE_ID:'v1'};
 
 test('AES-GCM roundtrip, wrong owner cannot decrypt',async()=>{
   const secret='synthetic-credential-for-encryption-roundtrip';
@@ -22,7 +22,7 @@ test('AES-GCM roundtrip, wrong owner cannot decrypt',async()=>{
 
 test('Browser hybrid encrypted Token decrypts in Worker, public JWK has no private component',async()=>{
   const pair=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
-  const env={INGEST_PRIVATE_JWK:JSON.stringify(await crypto.subtle.exportKey('jwk',pair.privateKey))};
+  const env={GMC_INGEST_JWK:JSON.stringify(await crypto.subtle.exportKey('jwk',pair.privateKey))};
   const pub=ingestionPublicJwk(env);
   assert.equal('d' in pub,false);
   const rsa=await crypto.subtle.importKey('jwk',pub,{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
@@ -67,9 +67,9 @@ test('MCP refuses tool operations on unapproved owner, even when a client has re
 });
 
 test('Admin session signed with HMAC is not forgeable',async()=>{
-  const env={ADMIN_KEY:'A'.repeat(48),COOKIE_SIGNING_KEY:'B'.repeat(48),GITHUB_DB:{prepare(){return{bind(){return{first:async()=>({hits:1})}}}}}};
+  const env={GMC_ADMIN_KEY:'A'.repeat(48),GMC_COOKIE_KEY:'B'.repeat(48),GITHUB_DB:{prepare(){return{bind(){return{first:async()=>({hits:1})}}}}}};
   const origin='https://mcp.example';
-  const login=await adminLogin(new Request(origin+'/admin/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({key:env.ADMIN_KEY}).toString()}),env);
+  const login=await adminLogin(new Request(origin+'/admin/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({key:env.GMC_ADMIN_KEY}).toString()}),env);
   assert.equal(login.status,303);
   const value=login.headers.get('Set-Cookie').split(';')[0];
   const ok=await getSession(new Request(origin+'/admin',{headers:{Cookie:value}}),env);
@@ -80,6 +80,6 @@ test('Admin session signed with HMAC is not forgeable',async()=>{
 
 test('OAuth token denied immediately after client revocation, or audience mismatch',async()=>{
   const token='x'.repeat(43);
-  const env={GITHUB_MULTI_CONNECT_PUBLIC_URL:'https://mcp.example/mcp',GITHUB_DB:{prepare(){return{bind(){return{first:async()=>({resource:'https://mcp.example/mcp',scope:'mcp:read',expires_at:Date.now()/1000+100,approved:0,allowed_owners:'["acme"]'})}}}}}};
+  const env={GMC_PUBLIC_URL:'https://mcp.example/mcp',GITHUB_DB:{prepare(){return{bind(){return{first:async()=>({resource:'https://mcp.example/mcp',scope:'mcp:read',expires_at:Date.now()/1000+100,approved:0,allowed_owners:'["acme"]'})}}}}}};
   assert.equal(await validateMcpToken(new Request('https://mcp.example/mcp',{headers:{Authorization:'Bearer '+token}}),env),null);
 });

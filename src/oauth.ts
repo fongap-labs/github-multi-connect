@@ -9,8 +9,8 @@ const BIND='__Host-mcp-auth-binding';
 const b64urlRe=/^[A-Za-z0-9_-]{43}$/;
 const sanitizeName=(s: unknown)=>typeof s==='string' ? s.slice(0,100) : '';
 const oauthError=(error: string,status=400)=>json({error},status);
-function getBase(env: Env) {return new URL(env.GITHUB_MULTI_CONNECT_PUBLIC_URL).origin;}
-export function resource(env: Env) { const u=new URL(env.GITHUB_MULTI_CONNECT_PUBLIC_URL); if(u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname)) throw new Error('GITHUB_MULTI_CONNECT_PUBLIC_URL must use HTTPS'); if(u.pathname!=='/mcp') throw new Error('GITHUB_MULTI_CONNECT_PUBLIC_URL must end in /mcp');return u.href; }
+function getBase(env: Env) {return new URL(env.GMC_PUBLIC_URL).origin;}
+export function resource(env: Env) { const u=new URL(env.GMC_PUBLIC_URL); if(u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname)) throw new Error('GMC_PUBLIC_URL must use HTTPS'); if(u.pathname!=='/mcp') throw new Error('GMC_PUBLIC_URL must end in /mcp');return u.href; }
 export function protectedMetadata(env: Env) {return json({resource:resource(env),authorization_servers:[getBase(env)],scopes_supported:['mcp:read']});}
 export function serverMetadata(env: Env) {const base=getBase(env);return json({issuer:base,authorization_endpoint:base+'/authorize',token_endpoint:base+'/oauth/token',registration_endpoint:base+'/oauth/register',revocation_endpoint:base+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],token_endpoint_auth_methods_supported:['none'],code_challenge_methods_supported:['S256'],scopes_supported:SCOPES});}
 export function challenge(env: Env) {return json({error:'Authentication required'},401,{'WWW-Authenticate':'Bearer resource_metadata="'+getBase(env)+'/.well-known/oauth-protected-resource", scope="mcp:read"'});}
@@ -67,7 +67,7 @@ export async function authorizePost(request: Request,env: Env): Promise<Response
   const id=p.get('request_id')||''; if(!b64urlRe.test(id))return errorPage();
   const row=await env.GITHUB_DB.prepare('SELECT * FROM oauth_auth_requests WHERE id_hash=?').bind(await sha(id)).first();
   if(!row||row.expires_at<=now()||!(await equals(row.cookie_hash,await sha(cookie(request,BIND)))))return errorPage();
-  if(!env.MCP_APPROVAL_KEY||!(await equals(p.get('approval_key')||'',env.MCP_APPROVAL_KEY)))return html(page(OAUTH_DENIED_TITLE,OAUTH_DENIED_BODY),403);
+  if(!env.GMC_APPROVAL_KEY||!(await equals(p.get('approval_key')||'',env.GMC_APPROVAL_KEY)))return html(page(OAUTH_DENIED_TITLE,OAUTH_DENIED_BODY),403);
   const consumed=await env.GITHUB_DB.prepare('DELETE FROM oauth_auth_requests WHERE id_hash=? RETURNING id_hash').bind(await sha(id)).first(); if(!consumed)return errorPage();
   const scopes=['mcp:read']; const client=await env.GITHUB_DB.prepare('SELECT approved,allow_write,auth_version FROM oauth_clients WHERE client_id=?').bind(row.client_id).first();
   if(!client?.approved||client.auth_version!==row.auth_version)return errorPage();

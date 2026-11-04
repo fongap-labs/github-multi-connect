@@ -45,7 +45,7 @@ test('E2E: admin adds encrypted GitHub connection, approves client, OAuth PKCE, 
   const {db,sqlite}=d1();
   const rsa=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
   const secret=['github','pat','TEST_ONLY_CREDENTIAL_NEVER_ISSUED_BY_GITHUB_123456'].join('_');
-  const env={GITHUB_DB:db,GITHUB_MULTI_CONNECT_PUBLIC_URL:origin+'/mcp',ADMIN_KEY:'a'.repeat(48),MCP_APPROVAL_KEY:'b'.repeat(48),COOKIE_SIGNING_KEY:'c'.repeat(48),KEYRING_JSON:JSON.stringify({v1:b64(crypto.getRandomValues(new Uint8Array(32)))}),ACTIVE_KEY_ID:'v1',INGEST_PRIVATE_JWK:JSON.stringify(await crypto.subtle.exportKey('jwk',rsa.privateKey)),GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED:'false',GITHUB_MULTI_CONNECT_CAN_READ_FILE_CONTENT:'false',GITHUB_MULTI_CONNECT_OAUTH_TOKEN_TTL_SECONDS:'900'};
+  const env={GITHUB_DB:db,GMC_PUBLIC_URL:origin+'/mcp',GMC_ADMIN_KEY:'a'.repeat(48),GMC_APPROVAL_KEY:'b'.repeat(48),GMC_COOKIE_KEY:'c'.repeat(48),GMC_KEYRING_JSON:JSON.stringify({v1:b64(crypto.getRandomValues(new Uint8Array(32)))}),GMC_ACTIVE_ID:'v1',GMC_INGEST_JWK:JSON.stringify(await crypto.subtle.exportKey('jwk',rsa.privateKey)),GMC_WRITE_MODE:'disabled',GMC_CONTENT_MODE:'disabled',GMC_OAUTH_TTL:'900'};
   const originalFetch=globalThis.fetch;let remoteCount=0;
   globalThis.fetch=async (url,options)=>{
     assert.equal(new URL(url).origin,'https://api.github.com');
@@ -57,7 +57,7 @@ test('E2E: admin adds encrypted GitHub connection, approves client, OAuth PKCE, 
   };
   try{
     // Admin login (credentials only through the browser, never a MCP tool).
-    const login=await worker.fetch(req('/admin/login','POST',new URLSearchParams({key:env.ADMIN_KEY}).toString(),{'Content-Type':'application/x-www-form-urlencoded',Origin:origin}),env);
+    const login=await worker.fetch(req('/admin/login','POST',new URLSearchParams({key:env.GMC_ADMIN_KEY}).toString(),{'Content-Type':'application/x-www-form-urlencoded',Origin:origin}),env);
     assert.equal(login.status,303);
     const cookie=login.headers.get('set-cookie').split(';')[0];
     const session=await getSession(req('/admin','GET',null,{Cookie:cookie}),env);
@@ -80,7 +80,7 @@ test('E2E: admin adds encrypted GitHub connection, approves client, OAuth PKCE, 
     const authCookie=authorize.headers.get('set-cookie').split(';')[0];
     const page=await authorize.text();assert.ok(!page.includes(secret));
     const id=page.match(/name="request_id" value="([A-Za-z0-9_-]+)"/)[1];
-    const accepted=await worker.fetch(req('/authorize','POST',new URLSearchParams({request_id:id,approval_key:env.MCP_APPROVAL_KEY}).toString(),{'Content-Type':'application/x-www-form-urlencoded',Origin:origin,Cookie:authCookie}),env);
+    const accepted=await worker.fetch(req('/authorize','POST',new URLSearchParams({request_id:id,approval_key:env.GMC_APPROVAL_KEY}).toString(),{'Content-Type':'application/x-www-form-urlencoded',Origin:origin,Cookie:authCookie}),env);
     assert.equal(accepted.status,302);
     const redirect=new URL(accepted.headers.get('Location'));
     assert.equal(redirect.searchParams.get('state'),'test_state');
@@ -102,7 +102,7 @@ test('E2E: admin adds encrypted GitHub connection, approves client, OAuth PKCE, 
     // Enable optional writes. Even an authorized agent can only QUEUE a write.
     sqlite.prepare('UPDATE oauth_clients SET allow_write=1 WHERE client_id=?').run(client_id);
     sqlite.prepare('UPDATE oauth_access_tokens SET scope=?').run('mcp:read mcp:write');
-    env.GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED='true';
+    env.GMC_WRITE_MODE='approval';
     const create=await worker.fetch(req('/mcp','POST',JSON.stringify({jsonrpc:'2.0',id:5,method:'tools/call',params:{name:'github_create_issue',arguments:{owner:'acme',repo:'demo',title:'Test issue',body:'Reviewed by human'}}}),headers),env);
     const queued=JSON.parse((await create.json()).result.content[0].text);
     assert.equal(queued.status,'pending');assert.equal(remoteCount,3,'Queueing must NEVER perform a GitHub write');
