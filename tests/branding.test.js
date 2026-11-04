@@ -1,3 +1,4 @@
+import {GATEWAY_DISCLAIMER} from '../src/i18n/zh-CN.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../src/index.js';
@@ -19,12 +20,12 @@ test('independent mark and administration UI cannot be confused with official Gi
   assert.equal(login.status,200);
   const html=await login.text();
   assert.match(html,/GitHub Multi Connect/);
-  assert.match(html,/非 GitHub 官方 MCP Server/);
+  assert.ok(html.includes(GATEWAY_DISCLAIMER));
   assert.match(html,/Fongap Labs/);
   assert.match(html,/v0\.1\.0/);
   assert.match(html,/\/brand\/icon.svg/);
-  assert.doesNotMatch(html,/<h1>GitHub MCP 管理/);
-  assert.match(BRAND_NOTE,/独立开发/);
+  assert.doesNotMatch(html,/<h1>GitHub MCP/);
+  assert.ok(BRAND_NOTE.includes(GATEWAY_DISCLAIMER));
 });
 
 test('MCP initialize identifies an independent gateway, not the official server',async()=>{

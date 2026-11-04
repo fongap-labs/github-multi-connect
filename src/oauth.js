@@ -1,3 +1,4 @@
+import {renderOAuthForm,OAUTH_TITLE,OAUTH_DENIED_TITLE,OAUTH_DENIED_BODY} from './i18n/zh-CN.js';
 import {now,json,html,escapeHtml,randomId,sha,equals,cookie,originOk,form,bodyJson} from './util.js';
 import {issueAuthorizationTokens,rotateRefreshToken,revokeOAuthToken,cleanOAuthGrants} from './tokens.js';
 import {BRAND_NAME,BRAND_HEAD,BRAND_HEADER} from './brand.js';
@@ -55,8 +56,8 @@ export async function authorizeGet(request,env) {
   if(p.get('response_type')!=='code'||state.length>1024||!b64urlRe.test(codeChallenge)||p.get('code_challenge_method')!=='S256'||!asked.includes('mcp:read')||asked.some(s=>!SCOPES.includes(s))||p.get('resource')!==resource(env)) return errorPage();
   const bind=randomId(), id=randomId();
   await env.GITHUB_DB.prepare('INSERT INTO oauth_auth_requests(id_hash,cookie_hash,client_id,redirect_uri,resource,scope,state,code_challenge,expires_at,auth_version) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(await sha(id),await sha(bind),clientId,redirectUri,resource(env),asked.join(' '),state,codeChallenge,now()+600,client.auth_version).run();
-  const body=`<p>客户端 <strong>${escapeHtml(client.client_name)}</strong> 申请访问本 MCP。</p><p>回调地址：<code>${escapeHtml(redirectUri)}</code></p><p>授权的 GitHub Owner：<strong>${escapeHtml(JSON.parse(client.allowed_owners).join(', '))}</strong>。GitHub Token 不会交给客户端。</p><p>只授予本次明确选择的权限。</p><form method="post" action="/authorize"><input type="hidden" name="request_id" value="${id}"><label>连接授权密钥<input name="approval_key" type="password" autocomplete="off" required></label><label><input type="checkbox" name="read" checked disabled> 读取 GitHub 信息</label>${asked.includes('mcp:write')?'<label><input type="checkbox" name="allow_write" value="yes"> 允许创建 Issue（需服务器端同时开启写入）</label>':''}<button type="submit">授权此客户端</button></form><p class="muted">如不认识此客户端，请关闭页面，不要授权。</p>`;
-  return html(page('MCP 连接授权',body),200,{'Set-Cookie':`${BIND}=${bind}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`});
+  const body=renderOAuthForm({escapeHtml,client,redirectUri,allowedOwners:JSON.parse(client.allowed_owners),id,allowWrite:asked.includes('mcp:write')});
+  return html(page(OAUTH_TITLE,body),200,{'Set-Cookie':`${BIND}=${bind}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`});
 }
 export async function authorizePost(request,env) {
   if(!originOk(request))return errorPage();
@@ -65,7 +66,7 @@ export async function authorizePost(request,env) {
   const id=p.get('request_id')||''; if(!b64urlRe.test(id))return errorPage();
   const row=await env.GITHUB_DB.prepare('SELECT * FROM oauth_auth_requests WHERE id_hash=?').bind(await sha(id)).first();
   if(!row||row.expires_at<=now()||!(await equals(row.cookie_hash,await sha(cookie(request,BIND)))))return errorPage();
-  if(!env.MCP_APPROVAL_KEY||!(await equals(p.get('approval_key')||'',env.MCP_APPROVAL_KEY)))return html(page('认证失败','<p>连接授权密钥不正确。</p>'),403);
+  if(!env.MCP_APPROVAL_KEY||!(await equals(p.get('approval_key')||'',env.MCP_APPROVAL_KEY)))return html(page(OAUTH_DENIED_TITLE,OAUTH_DENIED_BODY),403);
   const consumed=await env.GITHUB_DB.prepare('DELETE FROM oauth_auth_requests WHERE id_hash=? RETURNING id_hash').bind(await sha(id)).first(); if(!consumed)return errorPage();
   const scopes=['mcp:read']; const client=await env.GITHUB_DB.prepare('SELECT approved,allow_write,auth_version FROM oauth_clients WHERE client_id=?').bind(row.client_id).first();
   if(!client?.approved||client.auth_version!==row.auth_version)return errorPage();

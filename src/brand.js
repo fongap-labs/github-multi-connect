@@ -1,8 +1,9 @@
+import {GATEWAY_DISCLAIMER} from './i18n/zh-CN.js';
 // Independent multi-connection mark. It does not reproduce any GitHub logo.
 export const BRAND_NAME = 'GitHub Multi Connect';
 export const BRAND_SOURCE = 'Fongap Labs';
 export const BRAND_VERSION = 'v0.1.0';
-export const BRAND_NOTE = `${BRAND_SOURCE} · ${BRAND_VERSION} · 独立开发的多账号 MCP 网关 · 非 GitHub 官方 MCP Server`;
+export const BRAND_NOTE = `${BRAND_SOURCE} · ${BRAND_VERSION} · ${GATEWAY_DISCLAIMER}`;
 export const BRAND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GitHub Multi Connect independent mark">
   <rect width="64" height="64" rx="16" fill="#286F78"/>
   <path d="M20 20h24M20 44h24M20 20v24M44 20v24" stroke="#D6F2EE" stroke-width="3.2" stroke-linecap="round" opacity=".7"/>
