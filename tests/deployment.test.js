@@ -12,7 +12,7 @@ function env(overrides={}){return {
   GMC_CONTENT_MODE:'disabled',
   MCP_OAUTH_TTL:'900',
   DEPLOY_SOURCE_SHA:sha,
-  DEPLOY_ENVIRONMENT:'mcp-hub-staging', ...overrides};}
+  DEPLOY_ENVIRONMENT:'mcp-hub-ops', ...overrides};}
 test('Generates exact approved MCP Hub bindings, no credentials or runtime secrets in config',()=>{
  const cfg=buildWranglerConfig(loadDeployConfig(env()));
  assert.equal(cfg.d1_databases[0].database_name,'mcp-hub');
@@ -30,7 +30,7 @@ test('Generates exact approved MCP Hub bindings, no credentials or runtime secre
  assert.equal(Object.keys(cfg.vars).length,6);
 });
 test('rejects invalid or incomplete deployment configurations',()=>{
- for(const x of [{MCP_D1_ID:''},{MCP_PUBLIC_URL:'http://mcp.135468.xyz'},{MCP_PUBLIC_URL:'https://mcp.example.workers.dev'},{MCP_PUBLIC_URL:'https://gmc.135468.xyz/mcp'},{GMC_WRITE_MODE:'true'},{GMC_CONTENT_MODE:'true'},{MCP_OAUTH_TTL:'120'},{MCP_ACTIVE_ID:''},{DEPLOY_SOURCE_SHA:'main'},{DEPLOY_ENVIRONMENT:'production'},{CLOUDFLARE_API_TOKEN_SECONDARY:''}]){
+ for(const x of [{MCP_D1_ID:''},{MCP_PUBLIC_URL:'http://mcp.135468.xyz'},{MCP_PUBLIC_URL:'https://mcp.example.workers.dev'},{MCP_PUBLIC_URL:'https://gmc.135468.xyz/mcp'},{GMC_WRITE_MODE:'true'},{GMC_CONTENT_MODE:'true'},{MCP_OAUTH_TTL:'120'},{MCP_ACTIVE_ID:''},{DEPLOY_SOURCE_SHA:'main'},{DEPLOY_ENVIRONMENT:'mcp-hub'},{DEPLOY_ENVIRONMENT:'mcp-hub-staging'},{DEPLOY_ENVIRONMENT:'production'},{CLOUDFLARE_API_TOKEN_SECONDARY:''}]){
    assert.throws(()=>loadDeployConfig(env(x)));
  }
 });
@@ -65,7 +65,7 @@ test('central entrypoint rejects source-owned independent deployment before Clou
   const {spawnSync}=await import('node:child_process');
   const script=new URL('../scripts/deploy.sh',import.meta.url);
   const vars={...process.env,RUNNER_TEMP:'/tmp',DEPLOY_SOURCE_SHA:sha,
-    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'mcp-hub-staging',
+    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'mcp-hub-ops',
     GITHUB_REPOSITORY:'fongap-labs/mcp-hub'};
   const r=spawnSync('bash',[script.pathname],{env:vars,encoding:'utf8'});
   assert.equal(r.status,77);
@@ -77,7 +77,7 @@ test('central entrypoint rejects missing runtime Secrets before npm or Cloudflar
   const {spawnSync}=await import('node:child_process');
   const script=new URL('../scripts/deploy.sh',import.meta.url);
   const vars={...process.env,RUNNER_TEMP:'/tmp',DEPLOY_SOURCE_SHA:sha,
-    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'mcp-hub-staging',
+    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'mcp-hub-ops',
     GITHUB_REPOSITORY:'fongap-labs/action-worker'};
   for(const name of ['CLOUDFLARE_API_TOKEN_SECONDARY','MCP_ADMIN_KEY','MCP_APPROVAL_KEY',
     'MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK'])delete vars[name];

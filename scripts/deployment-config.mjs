@@ -25,7 +25,7 @@ export function loadDeployConfig(env) {
   const writeMode = String(env.GMC_WRITE_MODE ?? 'disabled');
   const contentMode = String(env.GMC_CONTENT_MODE ?? 'disabled');
   const oauthTtl = String(env.MCP_OAUTH_TTL ?? '900');
-  const environment = String(env.DEPLOY_ENVIRONMENT ?? 'mcp-hub-staging');
+  const environment = String(env.DEPLOY_ENVIRONMENT ?? 'mcp-hub-ops');
   if (account && !/^[a-f0-9]{32}$/i.test(account)) errors.push('CLOUDFLARE_ACCOUNT_ID_SECONDARY must be a 32-character account ID');
   if (token && token.length < 8) errors.push('CLOUDFLARE_API_TOKEN_SECONDARY is invalid');
   if (databaseId && !UUID_RE.test(databaseId)) errors.push('MCP_D1_ID must be a D1 database UUID');
@@ -34,7 +34,7 @@ export function loadDeployConfig(env) {
   if (!['disabled','approval'].includes(writeMode)) errors.push('GMC_WRITE_MODE must be disabled or approval');
   if (!['disabled','enabled'].includes(contentMode)) errors.push('GMC_CONTENT_MODE must be disabled or enabled');
   if (!/^\d+$/.test(oauthTtl) || Number(oauthTtl) < 300 || Number(oauthTtl) > 3600) errors.push('MCP_OAUTH_TTL must be between 300 and 3600');
-  if (environment !== 'mcp-hub-staging') errors.push('Only approved mcp-hub-staging environment may deploy');
+  if (environment !== 'mcp-hub-ops') errors.push('Only approved mcp-hub-ops environment may deploy');
   try {
     const url = new URL(publicUrl);
     if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password || url.hostname !== 'mcp.135468.xyz') throw Error();
