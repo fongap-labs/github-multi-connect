@@ -1,6 +1,6 @@
 # Runner Protocol v1
 
-This document defines the data contract for Runner registration and heartbeats and the authenticated Registry and bounded lease behavior implemented on top of it. It does not add task dispatch or a scheduler.
+This document defines the data contract for Runner registration, heartbeats, the authenticated Registry, and bounded resource leases. Dispatch and quota reporting build on these identities and leases in [Runner Dispatch Protocol v1](RUNNER_DISPATCH.md).
 
 ## Identity and authentication
 
@@ -55,7 +55,7 @@ Unknown and unavailable Runners are ineligible for new dispatch. A lost heartbea
 
 ## Leases
 
-The Registry exposes internal lease-store functions for a later dispatcher; there is no public task assignment endpoint in this phase. A lease represents a finite Hub-owned capacity claim only. It is not a Runtime task record and carries no task state or completion result.
+The Registry exposes the Hub-owned lease store used by the dispatch contract. A lease represents a finite capacity claim only. It is not a Runtime task record and carries no task state or completion result.
 
 - Lease TTL is bounded to 60–900 seconds. Acquisition is a single conditional insert that checks the Runner is enabled, registered, heartbeat-fresh, and below its concurrency limit.
 - The idempotency key is unique and retained after release or expiry. Retrying a still-live key with the same Runner and resource returns the existing lease. A changed request, released lease, or expired lease conflicts; the key cannot be recycled.
@@ -66,6 +66,6 @@ The Registry exposes internal lease-store functions for a later dispatcher; ther
 
 The pure validators in `src/control/runner-protocol.ts` fail with stable codes: `invalid_payload_shape`, `unsupported_protocol_version`, `invalid_display_name`, `invalid_capability`, `invalid_capacity`, `invalid_heartbeat_sequence`, or `stale_heartbeat`. The HTTP endpoints map these codes to protocol error responses without returning credentials or internal exception details.
 
-## What this contract leaves for later PRs
+## Dispatch contract
 
-Global dispatch, task acceptance/rejection, automatic recovery, and quota scheduling remain out of scope here. They require a separate dispatch contract and Runtime reconciliation for uncertain side effects.
+The resource selection, quota, queue, offer handshake, cancellation and Runtime reconciliation rules are defined in [Runner Dispatch Protocol v1](RUNNER_DISPATCH.md). Runtime remains authoritative for execution state and uncertain side effects.
