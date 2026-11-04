@@ -22,7 +22,7 @@
 | 客户端权限 | 每个客户端指定允许的 GitHub Owner；Access Token 默认 15 分钟有效（最高可配置 1 小时）；注册时声明 `refresh_token` 的客户端可获得 30 天滚动 Refresh Token，授权最长 90 天 |
 | GitHub Token 录入 | 管理员通过 `/admin` 输入；浏览器使用 RSA-OAEP-256 加密随机 AES-256-GCM 密钥，再用 AES-GCM 加密 Token；传输同时使用 HTTPS |
 | 存储 | D1 仅保存 AES-256-GCM 密文、随机 96 位 IV、密钥版本；**owner 作为认证附加数据（AAD）**防止密文在不同账号之间交换 |
-| 加密密钥 | Workers Secrets `MCP_KEYRING_JSON` 保存 AES 密钥环；`MCP_INGEST_JWK` 保存浏览器加密使用的 RSA 私钥；均不写进仓库或数据库 |
+| 加密密钥 | Workers Secrets `MCP_KEYRING_JSON` 保存 AES 密钥环；`MCP_INGEST_JWK` 保存浏览器加密使用的 RSA 私钥；`MCP_RUNTIME_KEY`（可选）单独保护 Runtime 派发接口；均不写进仓库或数据库 |
 | GitHub 请求 | Worker 按需解密，仅发送到 `https://api.github.com` 的 `Authorization: Bearer ...` 请求头，HTTPS；响应只返回受控字段 |
 | 路由 | 按 owner 大小写不敏感精确映射；未配置、停用、未授权时立即拒绝，**绝不回退其他 GitHub Token** |
 | 写操作 | 默认关闭。仅启用 `GMC_WRITE_MODE=approval`、为客户端批准写权限、用户在 OAuth 中同意后才可提交；**创建 Issue 仍需管理员在 `/admin` 逐次审批，10 分钟过期** |
@@ -41,7 +41,7 @@
 - 可运行 `npx wrangler` 的开发机器
 - GitHub fine-grained PAT；建议每个组织/账号单独使用最小仓库权限、设置有效期
 
-**不要把 GitHub PAT、MCP_ADMIN_KEY、MCP_APPROVAL_KEY、MCP_KEYRING_JSON 或 MCP_INGEST_JWK 粘贴给 Agent。** 以下命令也不要求你把真实 Token 放进终端或聊天历史；GitHub Token 只在部署后的管理员网页填写。
+**不要把 GitHub PAT、MCP_ADMIN_KEY、MCP_APPROVAL_KEY、MCP_RUNTIME_KEY、MCP_KEYRING_JSON 或 MCP_INGEST_JWK 粘贴给 Agent。** 以下命令也不要求你把真实 Token 放进终端或聊天历史；GitHub Token 只在部署后的管理员网页填写。
 
 ## MCP Hub 部署边界
 
@@ -55,9 +55,9 @@ MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https:/
 | --- | --- |
 | Action Worker · Actions Variables | `CLOUDFLARE_ACCOUNT_ID_SECONDARY`, `MCP_D1_ID`, `MCP_PUBLIC_URL=https://mcp.135468.xyz`, `MCP_ACTIVE_ID`, `MCP_OAUTH_TTL`, `GMC_WRITE_MODE`, `GMC_CONTENT_MODE` |
 | Action Worker · Actions Secrets | `CLOUDFLARE_API_TOKEN_SECONDARY` |
-| Action Worker · `mcp-hub-ops` Environment Secrets | `MCP_ADMIN_KEY`, `MCP_APPROVAL_KEY`, `MCP_COOKIE_KEY`, `MCP_KEYRING_JSON`, `MCP_INGEST_JWK` |
+| Action Worker · `mcp-hub-ops` Environment Secrets | 必需：`MCP_ADMIN_KEY`, `MCP_APPROVAL_KEY`, `MCP_COOKIE_KEY`, `MCP_KEYRING_JSON`, `MCP_INGEST_JWK`；启用 Runtime 派发时还需 `MCP_RUNTIME_KEY` |
 
-**跨仓库密钥不可读**：原 MCP Hub Environment Secrets 不能由中央 Job 自动获取；须由管理员在 Action Worker 的 Environment 中安全配置**原样相同**的密钥值，并保留独立离线备份。不得生成新的 keyring/JWK 覆盖既有密文，禁止回退到其他 Token。中央白名单仅允许六项必需 Secrets，安装依赖与测试的子进程不接收这些凭据。
+**跨仓库密钥不可读**：原 MCP Hub Environment Secrets 不能由中央 Job 自动获取；须由管理员在 Action Worker 的 Environment 中安全配置**原样相同**的密钥值，并保留独立离线备份。不得生成新的 keyring/JWK 覆盖既有密文，禁止回退到其他 Token。Action Worker 当前中央白名单仍只允许六项必需 Secrets；启用派发前，须先在中央部署控制面把 `MCP_RUNTIME_KEY` 加入 MCP Hub 专用的可选 Secret 白名单，并将其安全传给 Worker。安装依赖和测试的子进程不接收运行时凭据。
 
 部署入口参数：`source_repository=fongap-labs/mcp-hub`、`environment=mcp-hub-ops`、`product` 与 `source_sha` 留空，`main_write_guard_bypass=false`。参见 [部署配置说明](docs/CENTRAL_DEPLOY.md)。本次更改不会部署 Cloudflare 或删除旧 D1。
 
@@ -77,7 +77,7 @@ MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https:/
 
 当前 `/` 与 `/github` 继续映射到 GitHub 模块，且保留各自独立的 OAuth Resource；这两个兼容入口暂时提供相同 GitHub 工具。
 
-Runner v1 的身份、注册、能力、心跳、凭据管理和有限资源租约见 [Runner Protocol](docs/RUNNER_PROTOCOL.md)。管理员可在 `/admin` 签发 Runner 凭据；Hub 不含任务派发、自动重试或全局调度。
+Runner v1 的注册与租约见 [Runner Protocol](docs/RUNNER_PROTOCOL.md)，任务引用派发、额度报告、接受/拒绝、取消和 Runtime 对账见 [Runner Dispatch](docs/RUNNER_DISPATCH.md)。Cloudflare Queue 只传递 D1 中派发记录的 ID；Hub 不保存任务正文，也不决定 Agent 执行状态。管理员可在 `/admin` 签发 Runner 凭据并查看派发指标。
 
 ### 本地测试
 
