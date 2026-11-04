@@ -3,7 +3,8 @@ import {json} from './util.ts';
 import {BRAND_ICON} from './brand.ts';
 import {protectedMetadata,serverMetadata,registerClient,authorizeGet,authorizePost,tokenEndpoint,revokeToken,validateMcpToken,challenge,cleanExpired} from './oauth.ts';
 import {adminRoute} from './admin.ts';
-import {serverForPath,serverForMetadata} from './mcp-registry.ts';
+import {serverForPath,serverForMetadata} from './gateway/registry.ts';
+import {processMcp} from './gateway/router.ts';
 
 export default {
   async fetch(request: Request,env: Env): Promise<Response> {
@@ -26,7 +27,7 @@ export default {
       if(mcpServer){
         const auth=await validateMcpToken(request,env,mcpServer);
         if(!auth)return challenge(env,mcpServer);
-        return mcpServer.handle(request,env,auth,mcpServer);
+        return processMcp(request,env,auth,mcpServer);
       }
       return json({error:'Not found'},404);
     } catch {
