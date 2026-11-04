@@ -14,12 +14,13 @@ if(existsSync('.secrets.json')||existsSync('.dev.vars')){
     MCP_ADMIN_KEY:random(48),
     MCP_APPROVAL_KEY:random(48),
     MCP_COOKIE_KEY:random(48),
+    MCP_RUNTIME_KEY:random(48),
     MCP_KEYRING_JSON:JSON.stringify(keyRing),
     MCP_INGEST_JWK:JSON.stringify(privateJwk)
   };
   writeFileSync('.secrets.json',JSON.stringify(secrets,null,2)+'\n',{mode:0o600,flag:'wx'});
   writeFileSync('.dev.vars',Object.entries({...secrets,MCP_ACTIVE_ID:'v1'}).map(([k,v])=>k+'='+JSON.stringify(v)).join('\n')+'\n',{mode:0o600,flag:'wx'});
-  console.log('Generated .secrets.json (five secrets) and .dev.vars (includes MCP_ACTIVE_ID=v1), mode 0600.');
+  console.log('Generated .secrets.json (six secrets) and .dev.vars (includes MCP_ACTIVE_ID=v1), mode 0600.');
   console.log('No secret values were printed. Store a secure offline backup.');
   console.log('Use MCP_ADMIN_KEY and MCP_APPROVAL_KEY only in the browser, NEVER in agent messages.');
 }
