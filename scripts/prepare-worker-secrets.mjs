@@ -21,8 +21,12 @@ export function prepareWorkerSecrets(env, destination, writer = writeFileSync) {
     }
     secrets[name] = value;
   }
+  if (typeof env.MCP_RUNTIME_KEY === 'string' && env.MCP_RUNTIME_KEY.trim()) {
+    if (env.MCP_RUNTIME_KEY.length < 32) throw new Error('MCP_RUNTIME_KEY must contain at least 32 characters');
+    secrets.MCP_RUNTIME_KEY = env.MCP_RUNTIME_KEY;
+  }
   writer(destination, JSON.stringify(secrets) + '\n', { mode: 0o600, flag: 'wx' });
-  return WORKER_SECRET_NAMES.length;
+  return Object.keys(secrets).length;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
