@@ -99,6 +99,12 @@ export async function reportRunnerQuota(request: Request, env: Env): Promise<Res
       quota_limit=excluded.quota_limit,cooldown_until=excluded.cooldown_until,observed_at=excluded.observed_at,expires_at=excluded.expires_at
       WHERE runner_quota_reports.sequence<excluded.sequence RETURNING runner_id`, runner.runnerId, report.quotaKey, report.sequence,
       report.remaining, report.limit, report.cooldownSeconds ? at + report.cooldownSeconds : null, at, at + QUOTA_REPORT_TTL_SECONDS).first();
+    const latest = dbRow(await stmt(env, 'SELECT sequence FROM runner_quota_reports WHERE runner_id=? AND quota_key=?',
+      runner.runnerId, report.quotaKey).first());
+    if (!latest || typeof latest.sequence !== 'number') return json({ error: 'dispatch_unavailable' }, 503);
+    await stmt(env, `UPDATE runner_dispatches SET quota_reserved=0 WHERE runner_id=? AND quota_key=?
+      AND status IN ('accepted','cancel_requested','held') AND quota_reserved=1 AND quota_sequence<?`,
+      runner.runnerId, report.quotaKey, latest.sequence).run();
     if (!saved) return json({ error: 'stale_quota_sequence' }, 409);
     return json({ ok: true, observedAt: new Date(at * 1000).toISOString(), expiresAt: new Date((at + QUOTA_REPORT_TTL_SECONDS) * 1000).toISOString() });
   } catch (error) { return protocolError(error); }
@@ -143,10 +149,12 @@ async function offerDispatch(env: Env, dispatch: DispatchRow, runnerId: string, 
       ON CONFLICT(idempotency_key) DO NOTHING RETURNING lease_id`, leaseId, idempotencyKey, dispatch.resource_key, at,
       leaseExpiry, dispatch.dispatch_id, dispatch.dispatch_id, runnerId, at, at, at, at),
     stmt(env, `UPDATE runner_dispatches SET status='offered',runner_id=?,lease_id=?,offered_at=?,offer_expires_at=?,
-        quota_reserved=CASE WHEN quota_key IS NULL THEN 0 ELSE 1 END,last_reason_code=NULL
+        quota_reserved=CASE WHEN quota_key IS NULL THEN 0 ELSE 1 END,
+        quota_sequence=CASE WHEN quota_key IS NULL THEN NULL ELSE (SELECT q.sequence FROM runner_quota_reports q
+          WHERE q.runner_id=? AND q.quota_key=runner_dispatches.quota_key) END,last_reason_code=NULL
       WHERE dispatch_id=? AND status='queued' AND EXISTS(SELECT 1 FROM runner_leases l WHERE l.lease_id=?
         AND l.dispatch_id=? AND l.runner_id=?) RETURNING dispatch_id`, runnerId, leaseId, at, at + DISPATCH_OFFER_TTL_SECONDS,
-      dispatch.dispatch_id, leaseId, dispatch.dispatch_id, runnerId),
+      runnerId, dispatch.dispatch_id, leaseId, dispatch.dispatch_id, runnerId),
     stmt(env, `DELETE FROM runner_leases WHERE lease_id=? AND NOT EXISTS(SELECT 1 FROM runner_dispatches d
       WHERE d.dispatch_id=? AND d.lease_id=? AND d.status='offered')`, leaseId, dispatch.dispatch_id, leaseId),
   ]);
@@ -197,7 +205,7 @@ export async function maintainDispatches(env: Env): Promise<void> {
     stmt(env, `UPDATE runner_dispatches SET status='queued',runner_id=NULL,lease_id=NULL,offered_at=NULL,
       offer_expires_at=NULL,published_at=NULL,quota_reserved=0,last_reason_code='offer_expired'
       WHERE status='offered' AND offer_expires_at<=?`, at),
-    stmt(env, `UPDATE runner_dispatches SET status='held',quota_reserved=0,runtime_state=COALESCE(runtime_state,'side_effects_uncertain')
+    stmt(env, `UPDATE runner_dispatches SET status='held',runtime_state=COALESCE(runtime_state,'side_effects_uncertain')
       WHERE status='accepted' AND lease_id IN (SELECT lease_id FROM runner_leases WHERE expires_at<=? AND released_at IS NULL)`, at),
   ]);
   await publishOutbox(env, at);
@@ -241,8 +249,8 @@ export async function acceptRunnerDispatch(request: Request, env: Env): Promise<
   try {
     const parsed = dispatchLeaseBody(await readBody(request)); if (!parsed) throw new DispatchProtocolError('invalid_payload_shape');
     const at = now();
-    const accepted = await stmt(env, `UPDATE runner_dispatches SET status='accepted',accepted_at=?,offer_expires_at=NULL,
-      quota_reserved=0 WHERE dispatch_id=? AND lease_id=? AND runner_id=? AND status='offered' AND offer_expires_at>?
+    const accepted = await stmt(env, `UPDATE runner_dispatches SET status='accepted',accepted_at=?,offer_expires_at=NULL
+      WHERE dispatch_id=? AND lease_id=? AND runner_id=? AND status='offered' AND offer_expires_at>?
       AND EXISTS(SELECT 1 FROM runner_leases l JOIN runners r ON r.runner_id=l.runner_id WHERE l.lease_id=?
         AND l.released_at IS NULL AND l.expires_at>? AND r.enabled=1 AND r.expires_at>?) RETURNING dispatch_id`,
       at, parsed.dispatchId, parsed.leaseId, runner.runnerId, at, parsed.leaseId, at, at).first();
@@ -305,8 +313,8 @@ export async function cancelDispatch(request: Request, env: Env): Promise<Respon
     const next = row.status === 'accepted' || row.status === 'held' ? 'cancel_requested' : 'cancelled';
     const at = now();
     const results = await env.MCP_DB.batch([
-      stmt(env, 'UPDATE runner_dispatches SET status=?,quota_reserved=0,closed_at=CASE WHEN ?=\'cancelled\' THEN ? ELSE closed_at END WHERE dispatch_id=? AND status=? RETURNING dispatch_id',
-        next, next, at, input.dispatchId, String(row.status)),
+      stmt(env, 'UPDATE runner_dispatches SET status=?,quota_reserved=CASE WHEN ?=\'cancelled\' THEN 0 ELSE quota_reserved END,closed_at=CASE WHEN ?=\'cancelled\' THEN ? ELSE closed_at END WHERE dispatch_id=? AND status=? RETURNING dispatch_id',
+        next, next, next, at, input.dispatchId, String(row.status)),
       ...(next === 'cancelled' && typeof row.lease_id === 'string' ? [stmt(env,
         `UPDATE runner_leases SET released_at=? WHERE lease_id=? AND released_at IS NULL AND EXISTS(
           SELECT 1 FROM runner_dispatches d WHERE d.dispatch_id=? AND d.status='cancelled' AND d.lease_id=?)`,
@@ -348,10 +356,10 @@ export async function reconcileDispatch(request: Request, env: Env): Promise<Res
         runner_id=CASE WHEN ?=1 THEN NULL ELSE runner_id END,lease_id=CASE WHEN ?=1 THEN NULL ELSE lease_id END,
         offered_at=CASE WHEN ?=1 THEN NULL ELSE offered_at END,offer_expires_at=CASE WHEN ?=1 THEN NULL ELSE offer_expires_at END,
         published_at=CASE WHEN ?=1 THEN NULL ELSE published_at END,accepted_at=CASE WHEN ?='accepted' THEN COALESCE(accepted_at,?) ELSE accepted_at END,
-        quota_reserved=0,closed_at=CASE WHEN ?=1 THEN ? ELSE closed_at END
+        quota_reserved=CASE WHEN ?=1 THEN 0 ELSE quota_reserved END,closed_at=CASE WHEN ?=1 THEN ? ELSE closed_at END
         WHERE dispatch_id=? AND status=? AND runtime_sequence<? RETURNING dispatch_id`, target, report.sequence, report.state,
         clearRunner ? 1 : 0, clearRunner ? 1 : 0, clearRunner ? 1 : 0, clearRunner ? 1 : 0, target === 'queued' ? 1 : 0,
-        target, at, terminal ? 1 : 0, at, report.dispatchId, current.status, report.sequence),
+        target, at, clearRunner ? 1 : 0, terminal ? 1 : 0, at, report.dispatchId, current.status, report.sequence),
       stmt(env, `UPDATE runner_leases SET released_at=? WHERE lease_id=? AND released_at IS NULL AND EXISTS(
         SELECT 1 FROM runner_dispatches d WHERE d.dispatch_id=? AND d.runtime_sequence=? AND d.runtime_state=? AND d.status IN ('queued','closed','cancelled'))`,
         at, current.lease_id, report.dispatchId, report.sequence, report.state),
