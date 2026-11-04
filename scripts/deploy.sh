@@ -35,16 +35,19 @@ cleanup() { rm -rf "$work"; }
 trap cleanup EXIT
 config="$work/wrangler.jsonc"
 
-npm install --ignore-scripts --no-audit --no-fund
-npm run validate
+if [[ ! -f node_modules/wrangler/bin/wrangler.js ]]; then
+  echo '::error::Dependencies must be installed and validated before the secret-bearing deploy step.' >&2
+  exit 77
+fi
 node scripts/deployment-config.mjs preflight
 node scripts/deployment-config.mjs prepare "$config"
+node scripts/prepare-worker-secrets.mjs "$work/worker-secrets.json"
 
 wrangler() { node scripts/with-secondary-cloudflare.mjs "$@"; }
 wrangler deploy --dry-run --outdir "$work/build" --config "$config"
 # D1 migrations are additive and NOT reverted by a Worker rollback.
 wrangler d1 migrations apply mcp-hub --remote --config "$config" --yes
-wrangler deploy --config "$config"
+wrangler deploy --secrets-file "$work/worker-secrets.json" --config "$config"
 
 healthy=false
 for attempt in 1 2 3; do

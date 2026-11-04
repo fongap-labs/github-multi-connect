@@ -30,6 +30,9 @@ delete env.CLOUDFLARE_API_TOKEN_SECONDARY;
 // Avoid inheriting other Cloudflare API auth paths from the host environment.
 delete env.CLOUDFLARE_API_KEY;
 delete env.CLOUDFLARE_EMAIL;
+// Wrangler receives Worker runtime secrets only through the private --secrets-file.
+// Prevent accidental inheritance or emission by unrelated Wrangler subcommands.
+for (const name of ['MCP_ADMIN_KEY','MCP_APPROVAL_KEY','MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK']) delete env[name];
 const result=spawnSync(process.execPath,[wrangler,...arguments_],{cwd:projectDir,env,stdio:'inherit',shell:false,windowsHide:true});
 if(result.error){
   console.error('Wrangler failed to launch ('+result.error.code+'). No credentials printed.');
