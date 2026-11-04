@@ -95,3 +95,11 @@ test('central deploy strips runtime Secrets from npm child processes',async()=>{
   for(const n of ['MCP_ADMIN_KEY','MCP_APPROVAL_KEY','MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK'])
     assert.match(script,new RegExp(n));
 });
+
+test('central deploy uses supported Wrangler D1 remote migration arguments',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const script=readFileSync(new URL('../scripts/deploy.sh',import.meta.url),'utf8');
+  const migration=script.split('\n').find(line=>line.startsWith('wrangler d1 migrations apply '));
+  assert.equal(migration,'wrangler d1 migrations apply mcp-hub --remote --config "$config"');
+  assert.doesNotMatch(migration,/--yes\b/);
+});
