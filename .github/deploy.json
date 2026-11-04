@@ -6,6 +6,6 @@
   "runner_profile": "production-deploy",
   "ignore_docs_only": true,
   "environments": {
-    "github-multi-connect-staging": {}
+    "mcp-hub-staging": {}
   }
 }

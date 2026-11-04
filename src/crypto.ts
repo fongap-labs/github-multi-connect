@@ -3,13 +3,13 @@ import {asObject, type Env, type DbRow} from './types.ts';
 
 // Browser RSA ingestion and D1 encryption use independent keys.
 async function aesKey(env: Env,keyId: string,usage: KeyUsage): Promise<CryptoKey> {
-  const ring=asObject(JSON.parse(env.GMC_KEYRING_JSON) as unknown);
+  const ring=asObject(JSON.parse(env.MCP_KEYRING_JSON) as unknown);
   if(!Object.hasOwn(ring,keyId)) throw new Error('Encryption key unavailable');
   const raw=unb64(ring[keyId]); if(raw.byteLength!==32) throw new Error('Invalid key length');
   return crypto.subtle.importKey('raw',raw,{name:'AES-GCM'},false,[usage]);
 }
 export async function seal(env: Env, owner: string, token: string): Promise<{key_id:string;iv:string;ciphertext:string}> {
-  const keyId=env.GMC_ACTIVE_ID; if(!/^[\w-]{1,32}$/.test(keyId||'')) throw new Error('Invalid active key id');
+  const keyId=env.MCP_ACTIVE_ID; if(!/^[\w-]{1,32}$/.test(keyId||'')) throw new Error('Invalid active key id');
   const key=await aesKey(env,keyId,'encrypt'); const iv=crypto.getRandomValues(new Uint8Array(12));
   const bytes=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:encoder.encode('github-owner:'+owner.toLowerCase())},key,encoder.encode(token));
   return {key_id:keyId,iv:b64(iv),ciphertext:b64(new Uint8Array(bytes))};
@@ -21,7 +21,7 @@ export async function unseal(env: Env, row: Pick<DbRow,'key_id'|'iv'|'ciphertext
 }
 interface IngestJwk extends JsonWebKey { kty: string; n: string; e: string; d: string; alg?: string }
 export function ingestionPublicJwk(env: Env): JsonWebKey {
-  const key=asObject(JSON.parse(env.GMC_INGEST_JWK) as unknown);
+  const key=asObject(JSON.parse(env.MCP_INGEST_JWK) as unknown);
   if(key.kty!=='RSA'||key.alg && key.alg!=='RSA-OAEP-256'||!key.n||!key.e||!key.d) throw new Error('Invalid ingestion key');
   return {kty:'RSA',n:String(key.n),e:String(key.e),alg:'RSA-OAEP-256',ext:true,key_ops:['encrypt']};
 }
@@ -30,7 +30,7 @@ export async function decryptIngested(env: Env, payload: unknown): Promise<strin
   const {wrappedKey,iv,ciphertext}=data;
   if(typeof wrappedKey!=='string'||typeof iv!=='string'||typeof ciphertext!=='string') throw new Error('Invalid encrypted payload');
   if(wrappedKey.length>2048 || ciphertext.length>8192) throw new Error('Encrypted token too large');
-  const privateJwk=JSON.parse(env.GMC_INGEST_JWK) as JsonWebKey;
+  const privateJwk=JSON.parse(env.MCP_INGEST_JWK) as JsonWebKey;
   const priv=await crypto.subtle.importKey('jwk',privateJwk,{name:'RSA-OAEP',hash:'SHA-256'},false,['decrypt']);
   const raw=await crypto.subtle.decrypt({name:'RSA-OAEP'},priv,unb64(wrappedKey));
   if(raw.byteLength!==32) throw new Error('Invalid wrapped key');

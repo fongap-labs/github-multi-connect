@@ -1,5 +1,6 @@
 import type { Env, McpAuth, DataObject } from './types.ts';
 import type { GitHubKind } from './github.ts';
+import type { McpServer } from './mcp-registry.ts';
 type RpcId = string | number | null;
 import {BRAND_NAME,BRAND_SOURCE,BRAND_VERSION} from './brand.ts';
 import {json,validOwner,validRepo,randomId,now} from './util.ts';
@@ -32,12 +33,12 @@ async function callTool(name: string,args: DataObject,env: Env,auth: McpAuth): P
   const scopes=auth.scopes;
   if(!args||typeof args!=='object'||Array.isArray(args))throw new PublicError('Invalid arguments');
   if(name==='github_available_owners'){
-    const {results=[]}=await env.GITHUB_DB.prepare('SELECT owner,owner_kind FROM github_connections WHERE enabled=1 ORDER BY owner LIMIT 100').all();
+    const {results=[]}=await env.MCP_DB.prepare('SELECT owner,owner_kind FROM github_connections WHERE enabled=1 ORDER BY owner LIMIT 100').all();
     return results.filter(x=>auth.allowedOwners.includes(x.owner.toLowerCase())).map(({owner,owner_kind})=>({owner,kind:owner_kind}));
   }
   if(name==='github_operation_status') {
     if(typeof args.request_id!=='string'||!/^[-_A-Za-z0-9]{43}$/.test(args.request_id))throw new PublicError('Invalid request id');
-    const row=await env.GITHUB_DB.prepare('SELECT owner,repo,title,status,result_json,expires_at FROM approval_requests WHERE id=? AND client_id=?').bind(args.request_id,auth.clientId).first();
+    const row=await env.MCP_DB.prepare('SELECT owner,repo,title,status,result_json,expires_at FROM approval_requests WHERE id=? AND client_id=?').bind(args.request_id,auth.clientId).first();
     if(!row||!auth.allowedOwners.includes(row.owner)||row.expires_at<=now()&&row.status==='pending')throw new PublicError('Operation not available');
     return {owner:row.owner,repo:row.repo,title:row.title,status:row.status,result:row.result_json?JSON.parse(row.result_json):null};
   }
@@ -52,14 +53,14 @@ async function callTool(name: string,args: DataObject,env: Env,auth: McpAuth): P
   if(name==='github_create_issue'){
     if(typeof args.title!=='string'||args.title.length<1||args.title.length>256||typeof (args.body??'')!=='string'||String(args.body??'').length>10000)throw new PublicError('Invalid issue title or body');
     const requestId=randomId();
-    await env.GITHUB_DB.prepare('INSERT INTO approval_requests(id,client_id,owner,repo,title,body,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?, ?,?)').bind(requestId,auth.clientId,args.owner.toLowerCase(),args.repo,args.title,String(args.body||''),'pending',now(),now()+600).run();
+    await env.MCP_DB.prepare('INSERT INTO approval_requests(id,client_id,owner,repo,title,body,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?, ?,?)').bind(requestId,auth.clientId,args.owner.toLowerCase(),args.repo,args.title,String(args.body||''),'pending',now(),now()+600).run();
     return {status:'pending',request_id:requestId,message:'Administrator approval is required. Use github_operation_status to check later.'};
   }
   const token=await getOwnerToken(env,args.owner);
   const data=await apiFetch(token,path);
   return summarize(kind||'repo',data);
 }
-export async function processMcp(request: Request,env: Env,auth: McpAuth): Promise<Response>{
+export async function processMcp(request: Request,env: Env,auth: McpAuth,server: McpServer): Promise<Response>{
   if(request.method==='GET'||request.method==='DELETE')return new Response(null,{status:405,headers:{'Allow':'POST','Cache-Control':'no-store'}});
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
   if(!(request.headers.get('Content-Type')||'').toLowerCase().includes('application/json'))return json({error:'Content type must be application/json'},415);
@@ -74,7 +75,7 @@ export async function processMcp(request: Request,env: Env,auth: McpAuth): Promi
     const p=rpc.params||{};
     const supported=['2026-07-28','2025-11-25','2025-06-18','2025-03-26'];
     const version=supported.includes(p.protocolVersion)?p.protocolVersion:'2025-11-25';
-    return json(rpcResult(id,{protocolVersion:version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'github-multi-connect',title:`${BRAND_NAME} · ${BRAND_SOURCE} (Independent)`,version:BRAND_VERSION.slice(1)},instructions:`Independent third-party multi-account gateway by ${BRAND_SOURCE}, NOT the official GitHub MCP Server. GitHub owner selects the matching server-held credential. Tokens cannot be read or returned by tools. GitHub writes and raw file contents are disabled by default.`}));
+    return json(rpcResult(id,{protocolVersion:version,capabilities:{tools:{listChanged:false}},serverInfo:{name:server.name,title:`${BRAND_NAME} · ${server.title} · ${BRAND_SOURCE} (Independent)`,version:BRAND_VERSION.slice(1)},instructions:`Independent third-party multi-account gateway by ${BRAND_SOURCE}, NOT the official GitHub MCP Server. GitHub owner selects the matching server-held credential. Tokens cannot be read or returned by tools. GitHub writes and raw file contents are disabled by default.`}));
   }
   if(rpc.method==='ping')return json(rpcResult(id,{}));
   if(rpc.method==='tools/list')return json(rpcResult(id,{tools:availableTools(env,auth.scopes)}));

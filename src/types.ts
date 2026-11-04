@@ -53,18 +53,18 @@ export interface D1Database {
   prepare(query: string): D1Statement;
 }
 export interface Env {
-  GITHUB_DB: D1Database;
-  GMC_PUBLIC_URL: string;
+  MCP_DB: D1Database;
+  MCP_PUBLIC_URL: string;
   GMC_WRITE_MODE?: 'disabled' | 'approval';
   GMC_CONTENT_MODE?: 'disabled' | 'enabled';
-  GMC_OAUTH_TTL?: string;
-  GMC_BUILD_SHA?: string;
-  GMC_ADMIN_KEY: string;
-  GMC_APPROVAL_KEY: string;
-  GMC_COOKIE_KEY: string;
-  GMC_KEYRING_JSON: string;
-  GMC_ACTIVE_ID: string;
-  GMC_INGEST_JWK: string;
+  MCP_OAUTH_TTL?: string;
+  MCP_BUILD_SHA?: string;
+  MCP_ADMIN_KEY: string;
+  MCP_APPROVAL_KEY: string;
+  MCP_COOKIE_KEY: string;
+  MCP_KEYRING_JSON: string;
+  MCP_ACTIVE_ID: string;
+  MCP_INGEST_JWK: string;
 }
 export interface McpAuth {
   clientId: string;

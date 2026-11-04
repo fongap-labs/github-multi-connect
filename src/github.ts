@@ -39,7 +39,7 @@ const field=(value: unknown, key: string): unknown => obj(value)[key];
 export async function apiFetch<T = GitHubResponse>(token: string,path: string,options: GitHubApiOptions={}): Promise<T> {
   const response=await fetch('https://api.github.com'+path,{
     method:options.method||'GET',
-    headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'github-multi-connect', ...(options.body?{'Content-Type':'application/json'}:{})},
+    headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'mcp-hub', ...(options.body?{'Content-Type':'application/json'}:{})},
     body:options.body?JSON.stringify(options.body):undefined,
     redirect:'error',
     signal:AbortSignal.timeout(12000)
@@ -50,7 +50,7 @@ export async function apiFetch<T = GitHubResponse>(token: string,path: string,op
 }
 export async function getOwnerToken(env: Env,owner: string): Promise<string> {
   if(!validOwner(owner)) throw new PublicError('Invalid GitHub owner');
-  const row=await env.GITHUB_DB.prepare('SELECT owner,key_id,iv,ciphertext FROM github_connections WHERE owner=? AND enabled=1').bind(owner.toLowerCase()).first();
+  const row=await env.MCP_DB.prepare('SELECT owner,key_id,iv,ciphertext FROM github_connections WHERE owner=? AND enabled=1').bind(owner.toLowerCase()).first();
   if(!row) throw new PublicError('No enabled GitHub connection configured for owner '+owner);
   return unseal(env,row);
 }
