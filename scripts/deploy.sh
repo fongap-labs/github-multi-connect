@@ -4,31 +4,34 @@ umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-: "${RUNNER_TEMP:?Trusted GitHub Actions deploy runner is required}"
+: "${RUNNER_TEMP:?Action Worker deploy runner is required}"
 : "${DEPLOY_SOURCE_SHA:?Missing immutable source SHA}"
 : "${DEPLOY_ENVIRONMENT:?Missing approved deployment environment}"
 
-# This entrypoint must run only in the source repository GitHub Environment.
-# The previous Action Worker cross-repository job cannot access these Secrets;
-# fail before touching Cloudflare rather than partially deploying an unready Worker.
-if [[ "${GITHUB_REPOSITORY:-}" != "fongap-labs/mcp-hub" ]]; then
-  echo '::error::MCP Hub deployments require the source-repository environment; central execution is denied.' >&2
+# Central Action Worker is the sole deployment authority. It verifies the
+# immutable source SHA, CI Evidence, Main Write Guard and environment policy.
+if [[ "${GITHUB_REPOSITORY:-}" != "fongap-labs/action-worker" || "${DEPLOY_SOURCE_REPOSITORY:-}" != "fongap-labs/mcp-hub" ]]; then
+  echo '::error::Deployments must be executed by the Action Worker control plane for MCP Hub.' >&2
   exit 77
 fi
-if [[ "${GITHUB_REF:-}" != "refs/heads/main" || "${GITHUB_SHA:-}" != "$DEPLOY_SOURCE_SHA" ]]; then
-  echo '::error::Deployment must execute the exact verified main commit.' >&2
-  exit 75
-fi
-if [[ "$DEPLOY_ENVIRONMENT" != "mcp-hub-staging" ]]; then
-  echo '::error::MCP Hub only allows the reviewed staging deployment environment.' >&2
+if [[ ! "$DEPLOY_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$DEPLOY_ENVIRONMENT" != "mcp-hub-staging" ]]; then
+  echo '::error::Deployment requires immutable source SHA and approved staging environment.' >&2
   exit 65
 fi
 for required in CLOUDFLARE_API_TOKEN_SECONDARY MCP_ADMIN_KEY MCP_APPROVAL_KEY MCP_COOKIE_KEY MCP_KEYRING_JSON MCP_INGEST_JWK; do
   if [[ -z "${!required:-}" ]]; then
-    echo "::error::Required source Environment Secret is unavailable: $required." >&2
+    echo "::error::Required Action Worker deployment Secret is unavailable: $required." >&2
     exit 77
   fi
 done
+
+# Secrets are stripped from npm install/test subprocesses; only Wrangler receives them.
+safe_env=(env)
+for name in CLOUDFLARE_API_TOKEN_SECONDARY MCP_ADMIN_KEY MCP_APPROVAL_KEY MCP_COOKIE_KEY MCP_KEYRING_JSON MCP_INGEST_JWK; do
+  safe_env+=("-u" "$name")
+done
+"${safe_env[@]}" npm install --ignore-scripts --no-audit --no-fund
+"${safe_env[@]}" npm run validate
 
 work="$(mktemp -d "${RUNNER_TEMP}/mcp-hub-deploy.XXXXXX")"
 cleanup() { rm -rf "$work"; }

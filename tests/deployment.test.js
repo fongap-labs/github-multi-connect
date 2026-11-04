@@ -60,40 +60,38 @@ test('committed Wrangler defaults keep workers.dev and preview URLs closed',asyn
 });
 
 
-test('deploy entrypoint refuses central runner before contacting Cloudflare', async () => {
-  if (process.platform === 'win32') return;
-  const { spawnSync } = await import('node:child_process');
-  const script = new URL('../scripts/deploy.sh', import.meta.url);
-  const vars = {
-    ...process.env,
-    RUNNER_TEMP: '/tmp',
-    DEPLOY_SOURCE_SHA: sha,
-    DEPLOY_ENVIRONMENT: 'mcp-hub-staging',
-    GITHUB_REPOSITORY: 'fongap-labs/action-worker',
-    GITHUB_REF: 'refs/heads/main',
-    GITHUB_SHA: sha,
-  };
-  const result = spawnSync('bash', [script.pathname], {env: vars, encoding: 'utf8'});
-  assert.equal(result.status, 77);
-  assert.match(result.stderr, /source-repository environment/);
-  assert.doesNotMatch(result.stdout + result.stderr, /wrangler deploy|migrations apply/);
+test('central entrypoint rejects source-owned independent deployment before Cloudflare',async()=>{
+  if(process.platform==='win32')return;
+  const {spawnSync}=await import('node:child_process');
+  const script=new URL('../scripts/deploy.sh',import.meta.url);
+  const vars={...process.env,RUNNER_TEMP:'/tmp',DEPLOY_SOURCE_SHA:sha,
+    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'mcp-hub-staging',
+    GITHUB_REPOSITORY:'fongap-labs/mcp-hub'};
+  const r=spawnSync('bash',[script.pathname],{env:vars,encoding:'utf8'});
+  assert.equal(r.status,77);
+  assert.match(r.stderr,/Action Worker control plane/);
+  assert.doesNotMatch(r.stdout+r.stderr,/wrangler deploy|migrations apply/);
 });
-
-test('deploy entrypoint fails before Cloudflare when source Secrets are missing', async () => {
-  if (process.platform === 'win32') return;
-  const { spawnSync } = await import('node:child_process');
-  const script = new URL('../scripts/deploy.sh', import.meta.url);
-  const vars = {
-    ...process.env,
-    RUNNER_TEMP: '/tmp',
-    DEPLOY_SOURCE_SHA: sha,
-    DEPLOY_ENVIRONMENT: 'mcp-hub-staging',
-    GITHUB_REPOSITORY: 'fongap-labs/mcp-hub',
-    GITHUB_REF: 'refs/heads/main',
-    GITHUB_SHA: sha,
-  };
-  for (const name of ['CLOUDFLARE_API_TOKEN_SECONDARY', 'MCP_ADMIN_KEY', 'MCP_APPROVAL_KEY', 'MCP_COOKIE_KEY', 'MCP_KEYRING_JSON', 'MCP_INGEST_JWK']) delete vars[name];
-  const result = spawnSync('bash', [script.pathname], {env: vars, encoding: 'utf8'});
-  assert.equal(result.status, 77);
-  assert.match(result.stderr, /Required source Environment Secret is unavailable/);
+test('central entrypoint rejects missing runtime Secrets before npm or Cloudflare',async()=>{
+  if(process.platform==='win32')return;
+  const {spawnSync}=await import('node:child_process');
+  const script=new URL('../scripts/deploy.sh',import.meta.url);
+  const vars={...process.env,RUNNER_TEMP:'/tmp',DEPLOY_SOURCE_SHA:sha,
+    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'mcp-hub-staging',
+    GITHUB_REPOSITORY:'fongap-labs/action-worker'};
+  for(const name of ['CLOUDFLARE_API_TOKEN_SECONDARY','MCP_ADMIN_KEY','MCP_APPROVAL_KEY',
+    'MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK'])delete vars[name];
+  const r=spawnSync('bash',[script.pathname],{env:vars,encoding:'utf8'});
+  assert.equal(r.status,77);
+  assert.match(r.stderr,/Required Action Worker deployment Secret is unavailable/);
+  assert.doesNotMatch(r.stdout+r.stderr,/npm install|wrangler deploy|migrations apply/);
+});
+test('central deploy strips runtime Secrets from npm child processes',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const script=readFileSync(new URL('../scripts/deploy.sh',import.meta.url),'utf8');
+  assert.match(script,/safe_env=\\(env\\)/);
+  assert.match(script,/npm install --ignore-scripts/);
+  assert.match(script,/npm run validate/);
+  for(const n of ['MCP_ADMIN_KEY','MCP_APPROVAL_KEY','MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK'])
+    assert.match(script,new RegExp(n));
 });
