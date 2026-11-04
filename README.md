@@ -25,7 +25,7 @@
 | 加密密钥 | Workers Secrets `GMC_KEYRING_JSON` 保存 AES 密钥环；`GMC_INGEST_JWK` 保存浏览器加密使用的 RSA 私钥；均不写进仓库或数据库 |
 | GitHub 请求 | Worker 按需解密，仅发送到 `https://api.github.com` 的 `Authorization: Bearer ...` 请求头，HTTPS；响应只返回受控字段 |
 | 路由 | 按 owner 大小写不敏感精确映射；未配置、停用、未授权时立即拒绝，**绝不回退其他 GitHub Token** |
-| 写操作 | 默认关闭。仅启用 `GMC_WRITE_MODE=true`、为客户端批准写权限、用户在 OAuth 中同意后才可提交；**创建 Issue 仍需管理员在 `/admin` 逐次审批，10 分钟过期** |
+| 写操作 | 默认关闭。仅启用 `GMC_WRITE_MODE=approval`、为客户端批准写权限、用户在 OAuth 中同意后才可提交；**创建 Issue 仍需管理员在 `/admin` 逐次审批，10 分钟过期** |
 | 管理界面 | 与 MCP 工具完全隔离；管理密钥 + HMAC 签名 HttpOnly/Secure/SameSite Cookie + CSRF 验证 + 严格 CSP |
 | 日志与响应 | 无 Token 导出接口；不记录 Header、请求体、GitHub 错误原文或异常堆栈；已知 GitHub Token 字样会尝试脱敏 |
 | 撤销 | 管理员可停用/删除 Github 连接，或撤销 MCP 客户端；撤销客户端时其访问令牌立即失效 |
