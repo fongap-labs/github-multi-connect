@@ -11,7 +11,7 @@ if(!globalThis.crypto)globalThis.crypto=webcrypto;
 
 function d1(){
   const sqlite=new DatabaseSync(':memory:');
-  for(const path of ['0001_init.sql','0002_refresh_token_rotation.sql','0003_runner_registry_leases.sql'])
+  for(const path of ['0001_init.sql','0002_refresh_token_rotation.sql','0003_runner_registry_leases.sql','0004_runner_dispatch.sql'])
     sqlite.exec(readFileSync(new URL('../migrations/'+path,import.meta.url),'utf8'));
   const db={prepare(sql){
     const statement=args=>({
