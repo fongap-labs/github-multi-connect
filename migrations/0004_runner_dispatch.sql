@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS runner_dispatches (
   accepted_at INTEGER,
   closed_at INTEGER,
   quota_reserved INTEGER NOT NULL DEFAULT 0 CHECK (quota_reserved IN (0,1)),
+  quota_sequence INTEGER,
   runtime_sequence INTEGER NOT NULL DEFAULT 0,
   runtime_state TEXT CHECK (runtime_state IS NULL OR runtime_state IN ('not_started','running','side_effects_uncertain','completed','cancelled','failed')),
   last_reason_code TEXT
