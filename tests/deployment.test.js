@@ -16,8 +16,8 @@ function env(overrides={}){return {
 test('Generates exact approved MCP Hub bindings, no credentials or runtime secrets in config',()=>{
  const cfg=buildWranglerConfig(loadDeployConfig(env()));
  assert.equal(cfg.d1_databases[0].database_name,'mcp-hub');
- assert.ok(cfg.main.endsWith('/src/index.ts'));
- assert.ok(cfg.d1_databases[0].migrations_dir.endsWith('/migrations')); 
+ assert.ok(cfg.main.endsWith('/src/index.ts')||cfg.main.endsWith('\\src\\index.ts'));
+ assert.ok(cfg.d1_databases[0].migrations_dir.endsWith('/migrations')||cfg.d1_databases[0].migrations_dir.endsWith('\\migrations'));
  assert.equal(cfg.d1_databases[0].binding,'MCP_DB');
  assert.equal(cfg.vars.MCP_BUILD_SHA,sha);
  assert.equal(cfg.vars.GMC_WRITE_MODE,'disabled');
@@ -99,7 +99,7 @@ test('central deploy strips runtime Secrets from npm child processes',async()=>{
 test('central deploy uses supported Wrangler D1 remote migration arguments',async()=>{
   const {readFileSync}=await import('node:fs');
   const script=readFileSync(new URL('../scripts/deploy.sh',import.meta.url),'utf8');
-  const migration=script.split('\n').find(line=>line.startsWith('wrangler d1 migrations apply '));
+ const migration=script.split('\n').find(line=>line.startsWith('wrangler d1 migrations apply '))?.trimEnd();
   assert.equal(migration,'wrangler d1 migrations apply mcp-hub --remote --config "$config"');
   assert.doesNotMatch(migration,/--yes\b/);
 });
