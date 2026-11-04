@@ -5,6 +5,11 @@ const COPY=${JSON.stringify(ADMIN_BROWSER_COPY)};
 (async()=>{
   const meta=document.querySelector('meta[name="csrf-token"]');if(!meta)return;
   const csrf=meta.content;const result=document.getElementById('result');
+  const metrics=document.getElementById('dispatch-metrics');
+  if(metrics){try{const r=await fetch('/admin/api/dispatch-metrics',{credentials:'same-origin'});if(!r.ok)throw new Error('暂不可用');
+    const m=await r.json();const counts=Object.entries(m.counts||{}).map(([state,count])=>state+': '+count).join('，')||'暂无派发记录';
+    metrics.textContent=counts+'；排队 '+m.queuedCount+'，最久等待 '+m.oldestQueuedAgeSeconds+' 秒，活动租约 '+m.activeLeases+'，过期额度报告 '+m.staleQuotaReports;
+  }catch{metrics.textContent='派发指标暂不可用'}}
   const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
   async function encryptToken(token){
     const pub=await(await fetch('/admin/api/public-key',{credentials:'same-origin'})).json();
