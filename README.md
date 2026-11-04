@@ -52,7 +52,7 @@ GMC 采用统一的三段式命名。日常运行时配置从 Action Worker Repo
 | 名称 | 说明 |
 |---|---|
 | `CLOUDFLARE_ACCOUNT_ID_SECONDARY` | 现有的第二 Cloudflare 账号 ID，保持既定名称 |
-| `GMC_PUBLIC_URL` | 真实 HTTPS MCP URL，以 `/mcp` 结尾 |
+| `GMC_PUBLIC_URL` | `https://gmc.135468.xyz/mcp`（唯一允许的线上 MCP 地址） |
 | `GMC_D1_ID` | 一次创建、长期复用的 D1 UUID |
 | `GMC_WRITE_MODE` | `disabled`（默认）或 `approval` |
 | `GMC_CONTENT_MODE` | `disabled`（默认）或 `enabled` |
@@ -62,6 +62,14 @@ GMC 采用统一的三段式命名。日常运行时配置从 Action Worker Repo
 **Action Worker → Actions Secrets**：仅需 `CLOUDFLARE_API_TOKEN_SECONDARY`。中央 `deploy-secrets.json` 只允许 staging 部署任务使用该凭据，缺失时停止，不回退到主账号。
 
 **Cloudflare Workers → Secrets**：仅在首次初始化或受控轮换时设置五项：`GMC_ADMIN_KEY`、`GMC_APPROVAL_KEY`、`GMC_COOKIE_KEY`、`GMC_KEYRING_JSON`、`GMC_INGEST_JWK`。它们由 Cloudflare 原生管理，不进入 GitHub Actions；`GMC_ACTIVE_ID` 是 Worker Variable，由 Action Worker 注入。
+
+### 自定义域名与默认域名关闭
+
+- 唯一公开入口为 `https://gmc.135468.xyz`；MCP URL 为 `https://gmc.135468.xyz/mcp`。
+- `wrangler.jsonc` 与受控部署动态配置均明确设置 `workers_dev: false`、`preview_urls: false`，并将 `gmc.135468.xyz` 绑定为 Cloudflare Worker **Custom Domain**。
+- 部署前会拒绝其他域名及任何 `*.workers.dev` 地址；Action Worker 的 `GMC_PUBLIC_URL` 必须填写完整的 HTTPS MCP URL，不要只填写域名。
+- **先确认 `135468.xyz` 的 Cloudflare Zone 位于 SECONDARY Cloudflare Account。** 绑定自定义域名时，若 `gmc.135468.xyz` 已存在冲突 CNAME，需先在 Cloudflare DNS 中处理；不能为了通过部署而重新开启 `workers.dev`。
+- 此 PR 仅设置下次 Wrangler 部署所用配置，**不会立即关闭已部署服务的 URL**；只有受控部署成功并应用配置后才生效。
 
 ### 一次性初始化
 
