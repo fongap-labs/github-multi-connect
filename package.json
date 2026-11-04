@@ -1,0 +1,26 @@
+{
+  "name": "github-multi-connect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Workers MCP gateway with encrypted, per-owner GitHub tokens and rotating OAuth sessions",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply GITHUB_DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply GITHUB_DB --remote",
+    "test": "node --experimental-sqlite --test tests/*.test.js",
+    "check": "node --check src/index.js && node --check src/admin.js && node --check src/oauth.js && node --check src/mcp.js && node --check src/github.js && node --check src/crypto.js && node --check src/tokens.js",
+    "cf:db:create": "node scripts/with-secondary-cloudflare.mjs d1 create github-multi-connect",
+    "cf:migrate": "node scripts/with-secondary-cloudflare.mjs d1 migrations apply GITHUB_DB --remote",
+    "cf:deploy": "node scripts/with-secondary-cloudflare.mjs deploy --secrets-file .secrets.json",
+    "cf:secrets": "node scripts/with-secondary-cloudflare.mjs secret bulk .secrets.json"
+  },
+  "devDependencies": {
+    "wrangler": "^4.44.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "author": "Fongap Labs"
+}
