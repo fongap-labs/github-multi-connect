@@ -1,8 +1,11 @@
 import {validOwner,validRepo} from './util.ts';
 import {unseal} from './crypto.ts';
 import type {Env} from './types.ts';
+import {McpPublicError} from './gateway/errors.ts';
+import {redact} from './gateway/redaction.ts';
 
-export class PublicError extends Error { constructor(message: string) {super(message);this.name='PublicError';} }
+export class PublicError extends McpPublicError { constructor(message: string) {super(message);this.name='PublicError';} }
+export {redact};
 export type GitHubKind = 'owner_identity' | 'repo' | 'issues' | 'issue' | 'pulls' | 'pull' | 'file';
 export interface GitHubPathArgs {
   owner: string;
@@ -53,13 +56,6 @@ export async function getOwnerToken(env: Env,owner: string): Promise<string> {
   const row=await env.MCP_DB.prepare('SELECT owner,key_id,iv,ciphertext FROM github_connections WHERE owner=? AND enabled=1').bind(owner.toLowerCase()).first();
   if(!row) throw new PublicError('No enabled GitHub connection configured for owner '+owner);
   return unseal(env,row);
-}
-export function redact(s: unknown): string {
-  return String(s)
-    .replace(/github_pat_[A-Za-z0-9_]{15,}/g,'[REDACTED_GITHUB_TOKEN]')
-    .replace(/gh[pousr]_[A-Za-z0-9_]{20,}/g,'[REDACTED_GITHUB_TOKEN]')
-    .replace(/(Bearer\s+)[^\s"']+/gi,'$1[REDACTED]')
-    .replace(/(authorization\s*[:=]\s*)[^\s,;"']+/gi,'$1[REDACTED]');
 }
 export function summarize(kind: GitHubKind, data: unknown): unknown {
   if(kind==='repo') return {full_name:field(data,'full_name'),private:field(data,'private'),description:field(data,'description'),default_branch:field(data,'default_branch'),open_issues_count:field(data,'open_issues_count'),html_url:field(data,'html_url'),pushed_at:field(data,'pushed_at')};

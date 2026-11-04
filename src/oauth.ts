@@ -1,6 +1,6 @@
 import type { Env, McpAuth } from './types.ts';
-import type { McpServer } from './mcp-registry.ts';
-import {baseOrigin,resourceForServer,serverForResource} from './mcp-registry.ts';
+import type { McpServer } from './gateway/registry.ts';
+import {baseOrigin,resourceForServer,serverForResource} from './gateway/registry.ts';
 import {renderOAuthForm,OAUTH_TITLE,OAUTH_DENIED_TITLE,OAUTH_DENIED_BODY} from './i18n/zh-CN.ts';
 import {now,json,html,escapeHtml,randomId,sha,equals,cookie,originOk,form,bodyJson} from './util.ts';
 import {issueAuthorizationTokens,rotateRefreshToken,revokeOAuthToken,cleanOAuthGrants} from './tokens.ts';

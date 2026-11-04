@@ -71,6 +71,12 @@ MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https:/
 
 详细前置检查见 [MCP Hub 迁移说明](docs/MCP_HUB_MIGRATION.md)。
 
+### MCP 服务模块
+
+通用 MCP JSON-RPC 路由位于 `src/gateway/router.ts`，服务定义位于 `src/services/`，入口和 OAuth Resource 由 `src/gateway/registry.ts` 组合。每个服务模块独立声明描述、工具列表、工具调用处理器和兼容入口。新增模块的约定见 [MCP 模块开发说明](docs/MCP_MODULES.md)。
+
+当前 `/` 与 `/github` 继续映射到 GitHub 模块，且保留各自独立的 OAuth Resource；这两个兼容入口暂时提供相同 GitHub 工具。
+
 ### 本地测试
 
 ```bash
