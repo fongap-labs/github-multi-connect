@@ -10,7 +10,7 @@ import {renderAdminLogin,renderAdminDocument,renderClientRow,renderPendingRow,re
 
 const COOKIE='__Host-gmcp-admin';
 const locked=()=>html(renderAdminLogin({BRAND_HEAD,BRAND_NAME,BRAND_HEADER}));
-function sessionKey(env: Env) { if(!env.GMC_COOKIE_KEY||env.GMC_COOKIE_KEY.length<32) throw new Error('GMC_COOKIE_KEY too short');return encoder.encode(env.GMC_COOKIE_KEY); }
+function sessionKey(env: Env) { if(!env.MCP_COOKIE_KEY||env.MCP_COOKIE_KEY.length<32) throw new Error('MCP_COOKIE_KEY too short');return encoder.encode(env.MCP_COOKIE_KEY); }
 async function sign(env: Env,body: string) {const key=await crypto.subtle.importKey('raw',sessionKey(env),{name:'HMAC',hash:'SHA-256'},false,['sign']);return b64u(new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(body))));}
 export async function getSession(request: Request,env: Env): Promise<AdminSession | null> {
   try {
@@ -27,16 +27,16 @@ export async function adminLogin(request: Request,env: Env): Promise<Response> {
   if(!originOk(request))return json({error:'Forbidden'},403);
   if(!(await rateLimit(env,request,'admin-login',15)))return json({error:'Rate limited'},429);
   const p=await form(request);const proposed=p.get('key')||'';
-  if(!env.GMC_ADMIN_KEY||env.GMC_ADMIN_KEY.length<32||!(await equals(proposed,env.GMC_ADMIN_KEY)))return html('<p>Invalid credentials.</p>',403);
+  if(!env.MCP_ADMIN_KEY||env.MCP_ADMIN_KEY.length<32||!(await equals(proposed,env.MCP_ADMIN_KEY)))return html('<p>Invalid credentials.</p>',403);
   const data={exp:now()+1800,csrf:randomId()};const body=b64u(encoder.encode(JSON.stringify(data)));const value=body+'.'+await sign(env,body);
   return redirect('/admin',{'Set-Cookie':`${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=1800`});
 }
 export async function adminPage(request: Request,env: Env): Promise<Response> {
   const session=await getSession(request,env);if(!session)return locked();
-  const {results=[]}=await env.GITHUB_DB.prepare('SELECT owner,owner_kind,enabled,updated_at FROM github_connections ORDER BY owner').all();
-  const clients=(await env.GITHUB_DB.prepare('SELECT client_id,client_name,redirect_uris,approved,allowed_owners,allow_write FROM oauth_clients ORDER BY created_at DESC LIMIT 100').all()).results||[];
+  const {results=[]}=await env.MCP_DB.prepare('SELECT owner,owner_kind,enabled,updated_at FROM github_connections ORDER BY owner').all();
+  const clients=(await env.MCP_DB.prepare('SELECT client_id,client_name,redirect_uris,approved,allowed_owners,allow_write FROM oauth_clients ORDER BY created_at DESC LIMIT 100').all()).results||[];
   const clientRows=clients.map(c=>renderClientRow(c,escapeHtml)).join('');
-  const pending=(await env.GITHUB_DB.prepare("SELECT id,client_id,owner,repo,title,body,expires_at FROM approval_requests WHERE status='pending' AND expires_at>? ORDER BY created_at ASC LIMIT 50").bind(now()).all()).results||[];
+  const pending=(await env.MCP_DB.prepare("SELECT id,client_id,owner,repo,title,body,expires_at FROM approval_requests WHERE status='pending' AND expires_at>? ORDER BY created_at ASC LIMIT 50").bind(now()).all()).results||[];
   const pendingRows=pending.map(r=>renderPendingRow(r,escapeHtml)).join('');
   const rows=results.map(r=>renderConnectionRow(r,escapeHtml)).join('');
   return html(renderAdminDocument({session,BRAND_HEAD,BRAND_NAME,BRAND_HEADER,rows,clientRows,pendingRows}));
@@ -64,16 +64,16 @@ export async function adminApi(request: Request,env: Env,path: string): Promise<
     } catch(e) {return json({error:e instanceof PublicError?e.message:'Token validation failed'},400);}
     const sealed=await seal(env,owner,token);token=undefined;
     const ts=now();
-    await env.GITHUB_DB.prepare(`INSERT INTO github_connections(owner,owner_kind,key_id,iv,ciphertext,enabled,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?) ON CONFLICT(owner) DO UPDATE SET owner_kind=excluded.owner_kind,key_id=excluded.key_id,iv=excluded.iv,ciphertext=excluded.ciphertext,enabled=1,updated_at=excluded.updated_at`).bind(owner,data.kind,sealed.key_id,sealed.iv,sealed.ciphertext,ts,ts).run();
+    await env.MCP_DB.prepare(`INSERT INTO github_connections(owner,owner_kind,key_id,iv,ciphertext,enabled,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?) ON CONFLICT(owner) DO UPDATE SET owner_kind=excluded.owner_kind,key_id=excluded.key_id,iv=excluded.iv,ciphertext=excluded.ciphertext,enabled=1,updated_at=excluded.updated_at`).bind(owner,data.kind,sealed.key_id,sealed.iv,sealed.ciphertext,ts,ts).run();
     return json({ok:true,owner});
   }
   if(path==='/admin/api/status'||path==='/admin/api/delete'){
     let body;try{body=await bodyJson(request,1024);}catch{return json({error:'Invalid request'},400);}
     if(!validOwner(body.owner))return json({error:'Invalid owner'},400);
-    if(path.endsWith('/delete')) await env.GITHUB_DB.prepare('DELETE FROM github_connections WHERE owner=?').bind(body.owner.toLowerCase()).run();
+    if(path.endsWith('/delete')) await env.MCP_DB.prepare('DELETE FROM github_connections WHERE owner=?').bind(body.owner.toLowerCase()).run();
     else {
       if(typeof body.enabled!=='boolean')return json({error:'Invalid status'},400);
-      await env.GITHUB_DB.prepare('UPDATE github_connections SET enabled=?,updated_at=? WHERE owner=?').bind(body.enabled?1:0,now(),body.owner.toLowerCase()).run();
+      await env.MCP_DB.prepare('UPDATE github_connections SET enabled=?,updated_at=? WHERE owner=?').bind(body.enabled?1:0,now(),body.owner.toLowerCase()).run();
     }
     return json({ok:true});
   }
@@ -82,17 +82,17 @@ export async function adminApi(request: Request,env: Env,path: string): Promise<
     if(typeof data.clientId!=='string'||data.clientId.length>100)return json({error:'Invalid client'},400);
     if(data.approved===false){
       await revokeClientTokens(env,data.clientId);
-      await env.GITHUB_DB.prepare('UPDATE oauth_clients SET approved=0,allowed_owners=?,allow_write=0,auth_version=auth_version+1 WHERE client_id=?').bind('[]',data.clientId).run();
+      await env.MCP_DB.prepare('UPDATE oauth_clients SET approved=0,allowed_owners=?,allow_write=0,auth_version=auth_version+1 WHERE client_id=?').bind('[]',data.clientId).run();
       return json({ok:true});
     }
     const allowed=data.allowedOwners;
     if(!Array.isArray(allowed)||allowed.length<1||allowed.length>30||allowed.some(x=>!validOwner(x)))return json({error:'At least one valid owner is required'},400);
     const distinct=[...new Set(allowed.map(x=>x.toLowerCase()))];
-    for(const owner of distinct){const exists=await env.GITHUB_DB.prepare('SELECT enabled FROM github_connections WHERE owner=?').bind(owner).first();if(!exists?.enabled)return json({error:'Owner missing or disabled: '+owner},400);}
+    for(const owner of distinct){const exists=await env.MCP_DB.prepare('SELECT enabled FROM github_connections WHERE owner=?').bind(owner).first();if(!exists?.enabled)return json({error:'Owner missing or disabled: '+owner},400);}
     // Any permission update invalidates the previous authorization grant family,
     // even if the client is later re-approved.
     await revokeClientTokens(env,data.clientId);
-    const row=await env.GITHUB_DB.prepare('UPDATE oauth_clients SET approved=1,allowed_owners=?,allow_write=?,auth_version=auth_version+1 WHERE client_id=? RETURNING client_id').bind(JSON.stringify(distinct),data.allowWrite===true?1:0,data.clientId).first();
+    const row=await env.MCP_DB.prepare('UPDATE oauth_clients SET approved=1,allowed_owners=?,allow_write=?,auth_version=auth_version+1 WHERE client_id=? RETURNING client_id').bind(JSON.stringify(distinct),data.allowWrite===true?1:0,data.clientId).first();
     if(!row)return json({error:'Client not found'},404);
     return json({ok:true});
   }
@@ -100,36 +100,36 @@ export async function adminApi(request: Request,env: Env,path: string): Promise<
     let data;try{data=await bodyJson(request,2048);}catch{return json({error:'Invalid request'},400);}
     if(typeof data.id!=='string'||!/^[a-zA-Z0-9_-]{43}$/.test(data.id)||typeof data.action!=='string'||!['approve','deny'].includes(data.action))return json({error:'Invalid operation'},400);
     if(data.action==='deny'){
-      const row=await env.GITHUB_DB.prepare("UPDATE approval_requests SET status='denied' WHERE id=? AND status='pending' RETURNING id").bind(data.id).first();
+      const row=await env.MCP_DB.prepare("UPDATE approval_requests SET status='denied' WHERE id=? AND status='pending' RETURNING id").bind(data.id).first();
       return row?json({ok:true,status:'denied'}):json({error:'Request already handled'},409);
     }
     if(env.GMC_WRITE_MODE!=='approval')return json({error:'Write operations disabled in Worker configuration'},403);
-    const req=await env.GITHUB_DB.prepare("SELECT r.* FROM approval_requests r JOIN oauth_clients c ON r.client_id=c.client_id WHERE r.id=? AND r.status='pending' AND r.expires_at>? AND c.approved=1 AND c.allow_write=1").bind(data.id,now()).first();
+    const req=await env.MCP_DB.prepare("SELECT r.* FROM approval_requests r JOIN oauth_clients c ON r.client_id=c.client_id WHERE r.id=? AND r.status='pending' AND r.expires_at>? AND c.approved=1 AND c.allow_write=1").bind(data.id,now()).first();
     if(!req)return json({error:'Request not eligible for approval'},409);
-    const client=await env.GITHUB_DB.prepare('SELECT allowed_owners FROM oauth_clients WHERE client_id=?').bind(req.client_id).first();
+    const client=await env.MCP_DB.prepare('SELECT allowed_owners FROM oauth_clients WHERE client_id=?').bind(req.client_id).first();
     if(!client||!JSON.parse(client.allowed_owners).includes(req.owner))return json({error:'Client lost owner permission'},403);
-    const claimed=await env.GITHUB_DB.prepare("UPDATE approval_requests SET status='processing' WHERE id=? AND status='pending' AND expires_at>? RETURNING id").bind(data.id,now()).first();
+    const claimed=await env.MCP_DB.prepare("UPDATE approval_requests SET status='processing' WHERE id=? AND status='pending' AND expires_at>? RETURNING id").bind(data.id,now()).first();
     if(!claimed)return json({error:'Request already handled'},409);
     try {
       const token=await getOwnerToken(env,req.owner);
       const path=githubPath({owner:req.owner,repo:req.repo,kind:'repo'});
       const response=await apiFetch(token,path+'/issues',{method:'POST',body:{title:req.title,body:req.body}});
       const result={number:response.number,title:response.title,url:response.html_url};
-      await env.GITHUB_DB.prepare("UPDATE approval_requests SET status='approved',result_json=? WHERE id=? AND status='processing'").bind(JSON.stringify(result),req.id).run();
+      await env.MCP_DB.prepare("UPDATE approval_requests SET status='approved',result_json=? WHERE id=? AND status='processing'").bind(JSON.stringify(result),req.id).run();
       return json({ok:true,status:'approved',result});
     } catch {
       // Do not automatically retry a non-idempotent GitHub write operation.
-      await env.GITHUB_DB.prepare("UPDATE approval_requests SET status='failed' WHERE id=? AND status='processing'").bind(req.id).run();
+      await env.MCP_DB.prepare("UPDATE approval_requests SET status='failed' WHERE id=? AND status='processing'").bind(req.id).run();
       return json({error:'Approval action failed. Check GitHub before retrying.'},502);
     }
   }
   if(path==='/admin/api/rekey'){
-    const {results=[]}=await env.GITHUB_DB.prepare('SELECT * FROM github_connections WHERE key_id<>? LIMIT 50').bind(env.GMC_ACTIVE_ID).all();
+    const {results=[]}=await env.MCP_DB.prepare('SELECT * FROM github_connections WHERE key_id<>? LIMIT 50').bind(env.MCP_ACTIVE_ID).all();
     for(const row of results) {
       const token=await unseal(env,row);const sealed=await seal(env,row.owner,token);
-      await env.GITHUB_DB.prepare('UPDATE github_connections SET key_id=?,iv=?,ciphertext=?,updated_at=? WHERE owner=? AND key_id=?').bind(sealed.key_id,sealed.iv,sealed.ciphertext,now(),row.owner,row.key_id).run();
+      await env.MCP_DB.prepare('UPDATE github_connections SET key_id=?,iv=?,ciphertext=?,updated_at=? WHERE owner=? AND key_id=?').bind(sealed.key_id,sealed.iv,sealed.ciphertext,now(),row.owner,row.key_id).run();
     }
-    const remaining=await env.GITHUB_DB.prepare('SELECT COUNT(*) AS cnt FROM github_connections WHERE key_id<>?').bind(env.GMC_ACTIVE_ID).first();
+    const remaining=await env.MCP_DB.prepare('SELECT COUNT(*) AS cnt FROM github_connections WHERE key_id<>?').bind(env.MCP_ACTIVE_ID).first();
     return json({ok:true,processed:results.length,remaining:remaining?.cnt??0});
   }
   return json({error:'Not found'},404);

@@ -8,7 +8,7 @@ import {sha} from '../src/util.ts';
 
 if (!globalThis.crypto) globalThis.crypto=webcrypto;
 const origin='https://mcp.example';
-const resource=origin+'/mcp';
+const resource=origin;
 const clientId='mcp_'+'a'.repeat(43);
 const verifier='v'.repeat(48);
 const post=(path,form)=>worker.fetch(new Request(origin+path,{
@@ -25,7 +25,7 @@ function fixture(){
     all:async()=>({results:sql.prepare(query).all(...params)}),
     run:async()=>sql.prepare(query).run(...params)
   };}};}};
-  environment={GITHUB_DB:db,GMC_PUBLIC_URL:resource,GMC_OAUTH_TTL:'900'};
+  environment={MCP_DB:db,MCP_PUBLIC_URL:resource,MCP_OAUTH_TTL:'900'};
   return sql;
 }
 async function seed(sql,{refresh=true}={}){
