@@ -58,3 +58,42 @@ test('committed Wrangler defaults keep workers.dev and preview URLs closed',asyn
  assert.equal(base.preview_urls,false);
  assert.deepEqual(base.routes,[{pattern:'mcp.135468.xyz',custom_domain:true}]);
 });
+
+
+test('deploy entrypoint refuses central runner before contacting Cloudflare', async () => {
+  if (process.platform === 'win32') return;
+  const { spawnSync } = await import('node:child_process');
+  const script = new URL('../scripts/deploy.sh', import.meta.url);
+  const vars = {
+    ...process.env,
+    RUNNER_TEMP: '/tmp',
+    DEPLOY_SOURCE_SHA: sha,
+    DEPLOY_ENVIRONMENT: 'mcp-hub-staging',
+    GITHUB_REPOSITORY: 'fongap-labs/action-worker',
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_SHA: sha,
+  };
+  const result = spawnSync('bash', [script.pathname], {env: vars, encoding: 'utf8'});
+  assert.equal(result.status, 77);
+  assert.match(result.stderr, /source-repository environment/);
+  assert.doesNotMatch(result.stdout + result.stderr, /wrangler deploy|migrations apply/);
+});
+
+test('deploy entrypoint fails before Cloudflare when source Secrets are missing', async () => {
+  if (process.platform === 'win32') return;
+  const { spawnSync } = await import('node:child_process');
+  const script = new URL('../scripts/deploy.sh', import.meta.url);
+  const vars = {
+    ...process.env,
+    RUNNER_TEMP: '/tmp',
+    DEPLOY_SOURCE_SHA: sha,
+    DEPLOY_ENVIRONMENT: 'mcp-hub-staging',
+    GITHUB_REPOSITORY: 'fongap-labs/mcp-hub',
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_SHA: sha,
+  };
+  for (const name of ['CLOUDFLARE_API_TOKEN_SECONDARY', 'MCP_ADMIN_KEY', 'MCP_APPROVAL_KEY', 'MCP_COOKIE_KEY', 'MCP_KEYRING_JSON', 'MCP_INGEST_JWK']) delete vars[name];
+  const result = spawnSync('bash', [script.pathname], {env: vars, encoding: 'utf8'});
+  assert.equal(result.status, 77);
+  assert.match(result.stderr, /Required source Environment Secret is unavailable/);
+});

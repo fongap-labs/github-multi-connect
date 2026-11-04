@@ -8,6 +8,28 @@ cd "$ROOT"
 : "${DEPLOY_SOURCE_SHA:?Missing immutable source SHA}"
 : "${DEPLOY_ENVIRONMENT:?Missing approved deployment environment}"
 
+# This entrypoint must run only in the source repository GitHub Environment.
+# The previous Action Worker cross-repository job cannot access these Secrets;
+# fail before touching Cloudflare rather than partially deploying an unready Worker.
+if [[ "${GITHUB_REPOSITORY:-}" != "fongap-labs/mcp-hub" ]]; then
+  echo '::error::MCP Hub deployments require the source-repository environment; central execution is denied.' >&2
+  exit 77
+fi
+if [[ "${GITHUB_REF:-}" != "refs/heads/main" || "${GITHUB_SHA:-}" != "$DEPLOY_SOURCE_SHA" ]]; then
+  echo '::error::Deployment must execute the exact verified main commit.' >&2
+  exit 75
+fi
+if [[ "$DEPLOY_ENVIRONMENT" != "mcp-hub-staging" ]]; then
+  echo '::error::MCP Hub only allows the reviewed staging deployment environment.' >&2
+  exit 65
+fi
+for required in CLOUDFLARE_API_TOKEN_SECONDARY MCP_ADMIN_KEY MCP_APPROVAL_KEY MCP_COOKIE_KEY MCP_KEYRING_JSON MCP_INGEST_JWK; do
+  if [[ -z "${!required:-}" ]]; then
+    echo "::error::Required source Environment Secret is unavailable: $required." >&2
+    exit 77
+  fi
+done
+
 # The trusted deployment job must execute in this repository to access
 # its own GitHub Environment Secrets. The old central source-script job
 # cannot read those Secrets and must fail closed.
