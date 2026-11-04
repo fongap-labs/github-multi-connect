@@ -15,8 +15,8 @@ function availableTools(env,scopes){
     spec('github_list_pull_requests','List pull requests.',{owner:S,repo:S,state:{type:'string',enum:['open','closed','all']},per_page:{type:'integer',minimum:1,maximum:50}}),
     spec('github_get_pull_request','Read one pull request.',{owner:S,repo:S,number:N},['owner','repo','number'])
   ];
-  if(env.ALLOW_FILE_CONTENT==='true')tools.push(spec('github_read_file','Read a repository file; CONTENT MAY CONTAIN SECRETS. Disabled by default.',{owner:S,repo:S,path:S,ref:S},['owner','repo','path']));
-  if(env.GITHUB_WRITE_ENABLED==='true'&&scopes.includes('mcp:write'))tools.push(spec('github_create_issue','Request creating a GitHub issue; executes ONLY after independent administrator approval.',{owner:S,repo:S,title:S,body:S},['owner','repo','title']));
+  if(env.GITHUB_MULTI_CONNECT_CAN_READ_FILE_CONTENT==='true')tools.push(spec('github_read_file','Read a repository file; CONTENT MAY CONTAIN SECRETS. Disabled by default.',{owner:S,repo:S,path:S,ref:S},['owner','repo','path']));
+  if(env.GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED==='true'&&scopes.includes('mcp:write'))tools.push(spec('github_create_issue','Request creating a GitHub issue; executes ONLY after independent administrator approval.',{owner:S,repo:S,title:S,body:S},['owner','repo','title']));
   tools.push(spec('github_operation_status','Check the status of a write request submitted by this MCP client.',{request_id:S},['request_id']));
   return tools;
 }
@@ -40,9 +40,9 @@ async function callTool(name,args,env,auth) {
   }
   const types={github_get_repository:'repo',github_list_issues:'issues',github_get_issue:'issue',github_list_pull_requests:'pulls',github_get_pull_request:'pull',github_read_file:'file'};
   const kind=types[name];
-  if(kind==='file'&&env.ALLOW_FILE_CONTENT!=='true')throw new PublicError('File reading is disabled');
+  if(kind==='file'&&env.GITHUB_MULTI_CONNECT_CAN_READ_FILE_CONTENT!=='true')throw new PublicError('File reading is disabled');
   if(!kind&&name!=='github_create_issue')throw new PublicError('Unknown tool');
-  if(name==='github_create_issue'&&!(env.GITHUB_WRITE_ENABLED==='true'&&scopes.includes('mcp:write')))throw new PublicError('Write access is disabled');
+  if(name==='github_create_issue'&&!(env.GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED==='true'&&scopes.includes('mcp:write')))throw new PublicError('Write access is disabled');
   if(!validOwner(args.owner)||!auth.allowedOwners.includes(args.owner.toLowerCase()))throw new PublicError('Owner not authorized for this MCP client');
   const path=githubPath({...args,kind:kind||'repo'});
   if(name==='github_create_issue'){

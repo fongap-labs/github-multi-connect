@@ -101,7 +101,7 @@ export async function adminApi(request,env,path) {
       const row=await env.GITHUB_DB.prepare("UPDATE approval_requests SET status='denied' WHERE id=? AND status='pending' RETURNING id").bind(data.id).first();
       return row?json({ok:true,status:'denied'}):json({error:'Request already handled'},409);
     }
-    if(env.GITHUB_WRITE_ENABLED!=='true')return json({error:'Write operations disabled in Worker configuration'},403);
+    if(env.GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED!=='true')return json({error:'Write operations disabled in Worker configuration'},403);
     const req=await env.GITHUB_DB.prepare("SELECT r.* FROM approval_requests r JOIN oauth_clients c ON r.client_id=c.client_id WHERE r.id=? AND r.status='pending' AND r.expires_at>? AND c.approved=1 AND c.allow_write=1").bind(data.id,now()).first();
     if(!req)return json({error:'Request not eligible for approval'},409);
     const client=await env.GITHUB_DB.prepare('SELECT allowed_owners FROM oauth_clients WHERE client_id=?').bind(req.client_id).first();

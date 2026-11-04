@@ -78,6 +78,6 @@ test('Admin session signed with HMAC is not forgeable',async()=>{
 
 test('OAuth token denied immediately after client revocation, or audience mismatch',async()=>{
   const token='x'.repeat(43);
-  const env={MCP_PUBLIC_URL:'https://mcp.example/mcp',GITHUB_DB:{prepare(){return{bind(){return{first:async()=>({resource:'https://mcp.example/mcp',scope:'mcp:read',expires_at:Date.now()/1000+100,approved:0,allowed_owners:'["acme"]'})}}}}}};
+  const env={GITHUB_MULTI_CONNECT_PUBLIC_URL:'https://mcp.example/mcp',GITHUB_DB:{prepare(){return{bind(){return{first:async()=>({resource:'https://mcp.example/mcp',scope:'mcp:read',expires_at:Date.now()/1000+100,approved:0,allowed_owners:'["acme"]'})}}}}}};
   assert.equal(await validateMcpToken(new Request('https://mcp.example/mcp',{headers:{Authorization:'Bearer '+token}}),env),null);
 });

@@ -7,7 +7,7 @@ const refreshTokenRe=/^mcrt_[A-Za-z0-9_-]{43}$/;
 const accessTokenRe=/^[A-Za-z0-9_-]{43}$/;
 
 function ttl(env) {
-  const configured=Number(env.OAUTH_TOKEN_TTL_SECONDS);
+  const configured=Number(env.GITHUB_MULTI_CONNECT_OAUTH_TOKEN_TTL_SECONDS);
   return Number.isFinite(configured) && configured >=300 && configured<=3600 ? Math.trunc(configured) : ACCESS_TOKEN_TTL_DEFAULT;
 }
 function bearerResponse(accessToken,ttlSeconds,scope,refreshToken,refreshExpiresAt){

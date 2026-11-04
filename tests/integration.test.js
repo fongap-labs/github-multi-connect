@@ -45,7 +45,7 @@ test('E2E: admin adds encrypted GitHub connection, approves client, OAuth PKCE, 
   const {db,sqlite}=d1();
   const rsa=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
   const secret='github_pat_PRIVATE_TOKEN_SHOULD_NOT_EVER_APPEAR_IN_MODEL_OUTPUT_123456';
-  const env={GITHUB_DB:db,MCP_PUBLIC_URL:origin+'/mcp',ADMIN_KEY:'a'.repeat(48),MCP_APPROVAL_KEY:'b'.repeat(48),COOKIE_SIGNING_KEY:'c'.repeat(48),KEYRING_JSON:JSON.stringify({v1:b64(crypto.getRandomValues(new Uint8Array(32)))}),ACTIVE_KEY_ID:'v1',INGEST_PRIVATE_JWK:JSON.stringify(await crypto.subtle.exportKey('jwk',rsa.privateKey)),GITHUB_WRITE_ENABLED:'false',ALLOW_FILE_CONTENT:'false',OAUTH_TOKEN_TTL_SECONDS:'900'};
+  const env={GITHUB_DB:db,GITHUB_MULTI_CONNECT_PUBLIC_URL:origin+'/mcp',ADMIN_KEY:'a'.repeat(48),MCP_APPROVAL_KEY:'b'.repeat(48),COOKIE_SIGNING_KEY:'c'.repeat(48),KEYRING_JSON:JSON.stringify({v1:b64(crypto.getRandomValues(new Uint8Array(32)))}),ACTIVE_KEY_ID:'v1',INGEST_PRIVATE_JWK:JSON.stringify(await crypto.subtle.exportKey('jwk',rsa.privateKey)),GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED:'false',GITHUB_MULTI_CONNECT_CAN_READ_FILE_CONTENT:'false',GITHUB_MULTI_CONNECT_OAUTH_TOKEN_TTL_SECONDS:'900'};
   const originalFetch=globalThis.fetch;let remoteCount=0;
   globalThis.fetch=async (url,options)=>{
     assert.equal(new URL(url).origin,'https://api.github.com');
@@ -102,7 +102,7 @@ test('E2E: admin adds encrypted GitHub connection, approves client, OAuth PKCE, 
     // Enable optional writes. Even an authorized agent can only QUEUE a write.
     sqlite.prepare('UPDATE oauth_clients SET allow_write=1 WHERE client_id=?').run(client_id);
     sqlite.prepare('UPDATE oauth_access_tokens SET scope=?').run('mcp:read mcp:write');
-    env.GITHUB_WRITE_ENABLED='true';
+    env.GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED='true';
     const create=await worker.fetch(req('/mcp','POST',JSON.stringify({jsonrpc:'2.0',id:5,method:'tools/call',params:{name:'github_create_issue',arguments:{owner:'acme',repo:'demo',title:'Test issue',body:'Reviewed by human'}}}),headers),env);
     const queued=JSON.parse((await create.json()).result.content[0].text);
     assert.equal(queued.status,'pending');assert.equal(remoteCount,3,'Queueing must NEVER perform a GitHub write');

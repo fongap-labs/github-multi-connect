@@ -8,8 +8,8 @@ const BIND='__Host-mcp-auth-binding';
 const b64urlRe=/^[A-Za-z0-9_-]{43}$/;
 const sanitizeName=s=>typeof s==='string' ? s.slice(0,100) : '';
 const oauthError=(error,status=400)=>json({error},status);
-function getBase(env) {return new URL(env.MCP_PUBLIC_URL).origin;}
-export function resource(env) { const u=new URL(env.MCP_PUBLIC_URL); if(u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname)) throw new Error('MCP_PUBLIC_URL must use HTTPS'); if(u.pathname!=='/mcp') throw new Error('MCP_PUBLIC_URL must end in /mcp');return u.href; }
+function getBase(env) {return new URL(env.GITHUB_MULTI_CONNECT_PUBLIC_URL).origin;}
+export function resource(env) { const u=new URL(env.GITHUB_MULTI_CONNECT_PUBLIC_URL); if(u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname)) throw new Error('GITHUB_MULTI_CONNECT_PUBLIC_URL must use HTTPS'); if(u.pathname!=='/mcp') throw new Error('GITHUB_MULTI_CONNECT_PUBLIC_URL must end in /mcp');return u.href; }
 export function protectedMetadata(env) {return json({resource:resource(env),authorization_servers:[getBase(env)],scopes_supported:['mcp:read']});}
 export function serverMetadata(env) {const base=getBase(env);return json({issuer:base,authorization_endpoint:base+'/authorize',token_endpoint:base+'/oauth/token',registration_endpoint:base+'/oauth/register',revocation_endpoint:base+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],token_endpoint_auth_methods_supported:['none'],code_challenge_methods_supported:['S256'],scopes_supported:SCOPES});}
 export function challenge(env) {return json({error:'Authentication required'},401,{'WWW-Authenticate':'Bearer resource_metadata="'+getBase(env)+'/.well-known/oauth-protected-resource", scope="mcp:read"'});}

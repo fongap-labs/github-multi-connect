@@ -25,7 +25,7 @@
 | 加密密钥 | Workers Secrets `KEYRING_JSON` 保存 AES 密钥环；`INGEST_PRIVATE_JWK` 保存浏览器加密使用的 RSA 私钥；均不写进仓库或数据库 |
 | GitHub 请求 | Worker 按需解密，仅发送到 `https://api.github.com` 的 `Authorization: Bearer ...` 请求头，HTTPS；响应只返回受控字段 |
 | 路由 | 按 owner 大小写不敏感精确映射；未配置、停用、未授权时立即拒绝，**绝不回退其他 GitHub Token** |
-| 写操作 | 默认关闭。仅启用 `GITHUB_WRITE_ENABLED=true`、为客户端批准写权限、用户在 OAuth 中同意后才可提交；**创建 Issue 仍需管理员在 `/admin` 逐次审批，10 分钟过期** |
+| 写操作 | 默认关闭。仅启用 `GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED=true`、为客户端批准写权限、用户在 OAuth 中同意后才可提交；**创建 Issue 仍需管理员在 `/admin` 逐次审批，10 分钟过期** |
 | 管理界面 | 与 MCP 工具完全隔离；管理密钥 + HMAC 签名 HttpOnly/Secure/SameSite Cookie + CSRF 验证 + 严格 CSP |
 | 日志与响应 | 无 Token 导出接口；不记录 Header、请求体、GitHub 错误原文或异常堆栈；已知 GitHub Token 字样会尝试脱敏 |
 | 撤销 | 管理员可停用/删除 Github 连接，或撤销 MCP 客户端；撤销客户端时其访问令牌立即失效 |
@@ -52,7 +52,7 @@
 
 本项目的 `scripts/with-secondary-cloudflare.mjs` 会临时将它们映射为 Wrangler 的 `CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`，并显式屏蔽旧的 Email/API Key 认证入口。不提供主账号回退：任一变量缺失时直接失败。最小权限至少包括目标账号的 Workers 脚本部署和 D1 数据库编辑权限；按实际绑定及路由的 Cloudflare 功能增加必要权限。**这些变量仅用于部署，不属于 Worker 的运行时 Secrets，也不能当成 MCP 的客户端授权凭据。**
 
-部署前先用本地命令 `npm run cf:db:create` 创建 D1，再填入对应 ID。`MCP_PUBLIC_URL` 必须为 Worker 真实 URL。账号变量不会被自动读取为数据库 ID 或公网 URL。
+部署前先用本地命令 `npm run cf:db:create` 创建 D1，再填入对应 ID。`GITHUB_MULTI_CONNECT_PUBLIC_URL` 必须为 Worker 真实 URL。账号变量不会被自动读取为数据库 ID 或公网 URL。
 
 ## 部署
 
@@ -69,7 +69,7 @@
    npm run cf:db:create
    ```
 
-   将返回的 `database_id` 填入 `wrangler.jsonc`。修改 `vars.MCP_PUBLIC_URL` 为部署后的准确完整公网 URL，例如 `https://github-multi-connect.你的账号.workers.dev/mcp`（与访问地址必须完全一致，建议固定自定义域名）。默认禁止写操作和原始文件读取。
+   将返回的 `database_id` 填入 `wrangler.jsonc`。修改 `vars.GITHUB_MULTI_CONNECT_PUBLIC_URL` 为部署后的准确完整公网 URL，例如 `https://github-multi-connect.你的账号.workers.dev/mcp`（与访问地址必须完全一致，建议固定自定义域名）。默认禁止写操作和原始文件读取。
 
 3. **在你自己的电脑上**生成独立密钥：
 
@@ -86,7 +86,7 @@
    npm run cf:deploy
    ```
 
-   `wrangler.jsonc` 中 `MCP_PUBLIC_URL` 必须指向实际发布域名。部署完成后，检查 `GET /health` 与 `GET /.well-known/oauth-authorization-server`。
+   `wrangler.jsonc` 中 `GITHUB_MULTI_CONNECT_PUBLIC_URL` 必须指向实际发布域名。部署完成后，检查 `GET /health` 与 `GET /.well-known/oauth-authorization-server`。
 
 5. 打开 `https://<你的域名>/admin`，使用本地 `.secrets.json` 里的 `ADMIN_KEY` 登录。请仅在浏览器登录页面输入，**不要通过 Agent 转发**。选择 owner 类型（个人/组织），粘贴对应 GitHub Token。相同 owner 再次提交即更换 Token；服务端会先向 GitHub API 验证凭据以及用户名/组织类型。
 
@@ -138,7 +138,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-本地实际测试 OAuth 时，将 `MCP_PUBLIC_URL` 临时改成 `http://127.0.0.1:8787/mcp`（仅回环地址可使用 HTTP）；部署生产前务必恢复真实 HTTPS URL。
+本地实际测试 OAuth 时，将 `GITHUB_MULTI_CONNECT_PUBLIC_URL` 临时改成 `http://127.0.0.1:8787/mcp`（仅回环地址可使用 HTTP）；部署生产前务必恢复真实 HTTPS URL。
 
 测试含基本加密、跨账号隔离、Token 回显防护、管理员 Cookie 签名、OAuth 授权与刷新轮换、重放撤销、并发刷新及失效恢复限制。测试不需要真实 GitHub PAT；外部 GitHub API 请求用固定假数据模拟。Node 22 的 `node:sqlite` 测试可能打印实验性 API 提示。
 
