@@ -3,10 +3,17 @@
   "name": "github-multi-connect",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-04",
-  "workers_dev": true,
+  "workers_dev": false,
   "triggers": {
     "crons": [
       "0 4 * * *"
     ]
-  }
+  },
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "gmc.135468.xyz",
+      "custom_domain": true
+    }
+  ]
 }

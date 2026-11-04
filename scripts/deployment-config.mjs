@@ -37,8 +37,8 @@ export function loadDeployConfig(env) {
   if (environment !== 'github-multi-connect-staging') errors.push('Only approved github-multi-connect-staging environment may deploy');
   try {
     const url = new URL(publicUrl);
-    if (url.protocol !== 'https:' || url.pathname !== '/mcp' || url.search || url.hash || url.username || url.password || !url.hostname || !url.hostname.includes('.')) throw Error();
-  } catch {errors.push('GMC_PUBLIC_URL must be a full HTTPS URL ending in /mcp without query or hash');}
+    if (url.protocol !== 'https:' || url.pathname !== '/mcp' || url.search || url.hash || url.username || url.password || url.hostname !== 'gmc.135468.xyz')) throw Error();
+  } catch {errors.push('GMC_PUBLIC_URL must be exactly https://gmc.135468.xyz/mcp');}
   if (errors.length) throw new Error(`Deployment configuration invalid: ${errors.join('; ')}`);
   return {account, token, databaseId, publicUrl, activeId, buildSha, writeMode, contentMode, oauthTtl, environment};
 }
@@ -48,7 +48,9 @@ export function buildWranglerConfig(config, root=process.cwd()) {
     name: DATABASE_NAME,
     main: resolve(root, 'src/index.ts'),
     compatibility_date: '2026-11-04',
-    workers_dev: true,
+    workers_dev: false,
+    preview_urls: false,
+    routes: [{pattern: new URL(config.publicUrl).hostname, custom_domain: true}],
     // GitHub Variables are authoritative. Cloudflare Secrets are retained by Wrangler.
     keep_vars: false,
     vars: {
