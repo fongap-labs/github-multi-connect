@@ -8,7 +8,7 @@
 - Root MCP: `https://mcp.135468.xyz`; GitHub MCP: `https://mcp.135468.xyz/github`.
 - Shared administration and OAuth: `/admin`, `/authorize`, `/oauth/*`, `/.well-known/*`.
 - Platform config and Secrets use `MCP_*`; GitHub-only switches retain `GMC_WRITE_MODE` and `GMC_CONTENT_MODE`.
-- Staging Environment: `mcp-hub` in the **Action Worker** GitHub repository.
+- Staging Environment: `mcp-hub-ops` in the **Action Worker** GitHub repository.
 
 ## D1 is a separate data resource
 
@@ -28,7 +28,7 @@ Renaming a GitHub repository does not rename D1, Workers, GitHub Environments or
 
 MCP Hub is deployed only by the **same Action Worker source-script workflow as AI Gateway**, through [手动 · 部署服务](https://github.com/fongap-labs/action-worker/actions/workflows/deploy-source-script.yml). There is no independent MCP Hub deploy workflow. Action Worker validates the current main SHA, signed CI Evidence, Main Write Guard and central environment/runner policies before checking out and running the reviewed source script.
 
-Source-repository Environment Secrets cannot be read by an Action Worker job. Configure the same original AES keyring/JWK and three other runtime Secrets as **Action Worker** Environment Secrets in `mcp-hub`. Keep an offline backup. The `CLOUDFLARE_API_TOKEN_SECONDARY` stays in Action Worker Secrets and `CLOUDFLARE_ACCOUNT_ID_SECONDARY` stays in Action Worker Variables; no fallback token and no credential values in source control. Central Secret policy allows exactly six Secrets.
+Source-repository Environment Secrets cannot be read by an Action Worker job. Configure the same original AES keyring/JWK and three other runtime Secrets as **Action Worker** Environment Secrets in `mcp-hub-ops`. Keep an offline backup. The `CLOUDFLARE_API_TOKEN_SECONDARY` stays in Action Worker Secrets and `CLOUDFLARE_ACCOUNT_ID_SECONDARY` stays in Action Worker Variables; no fallback token and no credential values in source control. Central Secret policy allows exactly six Secrets.
 
 Check that `AW_REPOSITORY_POLICY` enables `fongap-labs/mcp-hub` and that `policies/deploy-environments.json` and `policies/deploy-secrets.json` approve only the intended staging scope. Do not deploy until `135468.xyz` is in the correct Cloudflare account, D1 backup/migration is verified, and no conflicting DNS record exists. Keep `workers_dev: false` and `preview_urls: false`. Worker rollback does not undo D1 schema/data migration.
 

@@ -1,1 +1,1 @@
-- 修复: 统一 MCP Hub 的中央部署环境名为 mcp-hub，并拒绝旧 mcp-hub-staging 名称。
+- 修复: 将 MCP Hub 中央部署环境统一为 mcp-hub-ops，并明确拒绝旧环境名。
