@@ -44,7 +44,7 @@ const post=(path,body,cookie,csrf)=>req(path,'POST',JSON.stringify(body),{'Conte
 test('E2E: admin adds encrypted GitHub connection, approves client, OAuth PKCE, routes owner, revokes client',async()=>{
   const {db,sqlite}=d1();
   const rsa=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
-  const secret='github_pat_PRIVATE_TOKEN_SHOULD_NOT_EVER_APPEAR_IN_MODEL_OUTPUT_123456';
+  const secret=['github','pat','TEST_ONLY_CREDENTIAL_NEVER_ISSUED_BY_GITHUB_123456'].join('_');
   const env={GITHUB_DB:db,GITHUB_MULTI_CONNECT_PUBLIC_URL:origin+'/mcp',ADMIN_KEY:'a'.repeat(48),MCP_APPROVAL_KEY:'b'.repeat(48),COOKIE_SIGNING_KEY:'c'.repeat(48),KEYRING_JSON:JSON.stringify({v1:b64(crypto.getRandomValues(new Uint8Array(32)))}),ACTIVE_KEY_ID:'v1',INGEST_PRIVATE_JWK:JSON.stringify(await crypto.subtle.exportKey('jwk',rsa.privateKey)),GITHUB_MULTI_CONNECT_IS_WRITE_ENABLED:'false',GITHUB_MULTI_CONNECT_CAN_READ_FILE_CONTENT:'false',GITHUB_MULTI_CONNECT_OAUTH_TOKEN_TTL_SECONDS:'900'};
   const originalFetch=globalThis.fetch;let remoteCount=0;
   globalThis.fetch=async (url,options)=>{

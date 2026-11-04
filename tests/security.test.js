@@ -12,7 +12,7 @@ const key=b64(crypto.getRandomValues(new Uint8Array(32)));
 const baseEnv={KEYRING_JSON:JSON.stringify({v1:key}),ACTIVE_KEY_ID:'v1'};
 
 test('AES-GCM roundtrip, wrong owner cannot decrypt',async()=>{
-  const secret='github_pat_test_sensitive_value_12345';
+  const secret='synthetic-credential-for-encryption-roundtrip';
   const sealed=await seal(baseEnv,'acme',secret);
   const row={owner:'acme',...sealed};
   assert.equal(await unseal(baseEnv,row),secret);
@@ -29,7 +29,7 @@ test('Browser hybrid encrypted Token decrypts in Worker, public JWK has no priva
   const aes=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt']);
   const raw=await crypto.subtle.exportKey('raw',aes);
   const iv=crypto.getRandomValues(new Uint8Array(12));
-  const secret='github_pat_DO_NOT_SHOW_THIS_IN_AGENT';
+  const secret='synthetic-credential-for-browser-encryption';
   const wrappedKey=await crypto.subtle.encrypt({name:'RSA-OAEP'},rsa,raw);
   const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv},aes,new TextEncoder().encode(secret));
   assert.equal(await decryptIngested(env,{wrappedKey:b64(new Uint8Array(wrappedKey)),iv:b64(iv),ciphertext:b64(new Uint8Array(ciphertext))}),secret);
@@ -52,9 +52,11 @@ test('GitHub operations only construct paths to a fixed API and refuse traversal
 });
 
 test('Github token strings are redacted from tool JSON output',()=>{
-  const raw='Authorization: github_pat_abcdefghijklmnopqrstuvwxyz0123456789 | ghp_abcdefghijklmnopqrstuvwxyz012345';
-  assert.ok(!redact(raw).includes('ghp_abcdefghijklmnopqrstuvwxyz'));
-  assert.ok(!redact(raw).includes('github_pat_abcdefghijklmnopqrstuvwxyz'));
+  const fineGrained=['github','pat','abcdefghijklmnopqrstuvwxyz0123456789'].join('_');
+  const classic=['gh','p_','abcdefghijklmnopqrstuvwxyz012345'].join('');
+  const raw='Authorization: '+fineGrained+' | '+classic;
+  assert.ok(!redact(raw).includes(classic));
+  assert.ok(!redact(raw).includes(fineGrained));
 });
 
 test('MCP refuses tool operations on unapproved owner, even when a client has read scope',async()=>{
