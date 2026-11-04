@@ -6,6 +6,6 @@
   "runner_profile": "production-deploy",
   "ignore_docs_only": true,
   "environments": {
-    "mcp-hub-staging": {}
+    "mcp-hub": {}
   }
 }

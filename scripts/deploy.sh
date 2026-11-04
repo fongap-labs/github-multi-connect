@@ -14,7 +14,7 @@ if [[ "${GITHUB_REPOSITORY:-}" != "fongap-labs/action-worker" || "${DEPLOY_SOURC
   echo '::error::Deployments must be executed by the Action Worker control plane for MCP Hub.' >&2
   exit 77
 fi
-if [[ ! "$DEPLOY_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$DEPLOY_ENVIRONMENT" != "mcp-hub-staging" ]]; then
+if [[ ! "$DEPLOY_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$DEPLOY_ENVIRONMENT" != "mcp-hub" ]]; then
   echo '::error::Deployment requires immutable source SHA and approved staging environment.' >&2
   exit 65
 fi

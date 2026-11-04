@@ -49,17 +49,17 @@
 
 ### 统一交由 Action Worker 部署
 
-MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https://github.com/fongap-labs/action-worker/actions/workflows/deploy-source-script.yml) 的 `source-script` 部署合同。MCP Hub 仓库**不保留独立部署工作流**。中央先验证不可变 main SHA、CI Evidence、Main Write Guard、环境和 runner 策略，再运行审核过的 `scripts/deploy.sh`。仅允许 `mcp-hub-staging` 手动部署。
+MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https://github.com/fongap-labs/action-worker/actions/workflows/deploy-source-script.yml) 的 `source-script` 部署合同。MCP Hub 仓库**不保留独立部署工作流**。中央先验证不可变 main SHA、CI Evidence、Main Write Guard、环境和 runner 策略，再运行审核过的 `scripts/deploy.sh`。仅允许 `mcp-hub` 手动部署。
 
 | 配置位置 | 名称 |
 | --- | --- |
 | Action Worker · Actions Variables | `CLOUDFLARE_ACCOUNT_ID_SECONDARY`, `MCP_D1_ID`, `MCP_PUBLIC_URL=https://mcp.135468.xyz`, `MCP_ACTIVE_ID`, `MCP_OAUTH_TTL`, `GMC_WRITE_MODE`, `GMC_CONTENT_MODE` |
 | Action Worker · Actions Secrets | `CLOUDFLARE_API_TOKEN_SECONDARY` |
-| Action Worker · `mcp-hub-staging` Environment Secrets | `MCP_ADMIN_KEY`, `MCP_APPROVAL_KEY`, `MCP_COOKIE_KEY`, `MCP_KEYRING_JSON`, `MCP_INGEST_JWK` |
+| Action Worker · `mcp-hub` Environment Secrets | `MCP_ADMIN_KEY`, `MCP_APPROVAL_KEY`, `MCP_COOKIE_KEY`, `MCP_KEYRING_JSON`, `MCP_INGEST_JWK` |
 
 **跨仓库密钥不可读**：原 MCP Hub Environment Secrets 不能由中央 Job 自动获取；须由管理员在 Action Worker 的 Environment 中安全配置**原样相同**的密钥值，并保留独立离线备份。不得生成新的 keyring/JWK 覆盖既有密文，禁止回退到其他 Token。中央白名单仅允许六项必需 Secrets，安装依赖与测试的子进程不接收这些凭据。
 
-部署入口参数：`source_repository=fongap-labs/mcp-hub`、`environment=mcp-hub-staging`、`product` 与 `source_sha` 留空，`main_write_guard_bypass=false`。参见 [部署配置说明](docs/CENTRAL_DEPLOY.md)。本次更改不会部署 Cloudflare 或删除旧 D1。
+部署入口参数：`source_repository=fongap-labs/mcp-hub`、`environment=mcp-hub`、`product` 与 `source_sha` 留空，`main_write_guard_bypass=false`。参见 [部署配置说明](docs/CENTRAL_DEPLOY.md)。本次更改不会部署 Cloudflare 或删除旧 D1。
 
 ### D1 与 OAuth 迁移
 
