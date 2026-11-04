@@ -54,7 +54,7 @@ When a dispatch has a `quotaKey`, the Runner must report a fresh quota snapshot 
 }
 ```
 
-Quota report sequences must strictly increase per Runner and quota key. Hub uses its own receive time; reports expire after five minutes. The scheduler skips a Runner in cooldown, with an expired report, or with no unreserved quota. It prefers the largest remaining quota, then the lowest capacity utilization, then the oldest Runner update. Runner quota values are authenticated reports, not independently verified provider facts.
+Quota report sequences must strictly increase per Runner and quota key. Hub uses its own receive time; reports expire after five minutes. The scheduler skips a Runner in cooldown, with an expired report, or with no unreserved quota. A quota reservation remains counted while an offer is pending and after acceptance until a newer Runner quota report reconciles consumption. It prefers the largest remaining quota after reservations, then the lowest capacity utilization, then the oldest Runner update. Runner quota values are authenticated reports, not independently verified provider facts.
 
 ## Offer handshake
 
