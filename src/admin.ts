@@ -1,4 +1,4 @@
-import type { Env, AdminSession } from './types.ts';
+import type { Env, AdminSession, McpAuth } from './types.ts';
 import {now,b64u,unb64u,encoder,randomId,equals,cookie,originOk,form,bodyJson,json,html,escapeHtml,validOwner} from './util.ts';
 import {ingestionPublicJwk,decryptIngested,seal,unseal} from './crypto.ts';
 import {apiFetch,githubPath,getOwnerToken,PublicError} from './github.ts';
@@ -7,9 +7,20 @@ import {BRAND_NAME,BRAND_HEAD,BRAND_HEADER} from './brand.ts';
 import {rateLimit} from './oauth.ts';
 import {revokeClientTokens} from './tokens.ts';
 import {renderAdminLogin,renderAdminDocument,renderClientRow,renderPendingRow,renderConnectionRow} from './i18n/zh-CN.ts';
+import {MCP_MODULES,MCP_SERVERS,toolPolicyId} from './gateway/registry.ts';
 
 const COOKIE='__Host-gmcp-admin';
 const locked=()=>html(renderAdminLogin({BRAND_HEAD,BRAND_NAME,BRAND_HEADER}));
+function policyCatalog(env: Env) {
+  const catalogEnv: Env={...env,GMC_WRITE_MODE:'approval',GMC_CONTENT_MODE:'enabled'};
+  const policyAuth: McpAuth={clientId:'admin-catalog',scopes:['mcp:read','mcp:write'],allowedOwners:[],allowedResources:[],allowedTools:[]};
+  return MCP_MODULES.map(module=>({
+    id:module.id,
+    description:module.description,
+    resources:MCP_SERVERS.filter(server=>server.module.id===module.id).map(server=>({id:server.id,path:server.path,title:server.title})),
+    tools:module.listTools(catalogEnv,policyAuth).map(tool=>({id:toolPolicyId(module.id,tool.name),name:tool.name,description:tool.description})),
+  }));
+}
 function sessionKey(env: Env) { if(!env.MCP_COOKIE_KEY||env.MCP_COOKIE_KEY.length<32) throw new Error('MCP_COOKIE_KEY too short');return encoder.encode(env.MCP_COOKIE_KEY); }
 async function sign(env: Env,body: string) {const key=await crypto.subtle.importKey('raw',sessionKey(env),{name:'HMAC',hash:'SHA-256'},false,['sign']);return b64u(new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(body))));}
 export async function getSession(request: Request,env: Env): Promise<AdminSession | null> {
@@ -34,8 +45,9 @@ export async function adminLogin(request: Request,env: Env): Promise<Response> {
 export async function adminPage(request: Request,env: Env): Promise<Response> {
   const session=await getSession(request,env);if(!session)return locked();
   const {results=[]}=await env.MCP_DB.prepare('SELECT owner,owner_kind,enabled,updated_at FROM github_connections ORDER BY owner').all();
-  const clients=(await env.MCP_DB.prepare('SELECT client_id,client_name,redirect_uris,approved,allowed_owners,allow_write FROM oauth_clients ORDER BY created_at DESC LIMIT 100').all()).results||[];
-  const clientRows=clients.map(c=>renderClientRow(c,escapeHtml)).join('');
+  const clients=(await env.MCP_DB.prepare('SELECT client_id,client_name,redirect_uris,approved,allowed_owners,allow_write,allowed_resources,allowed_tools FROM oauth_clients ORDER BY created_at DESC LIMIT 100').all()).results||[];
+  const catalog=policyCatalog(env);
+  const clientRows=clients.map(c=>renderClientRow(c,escapeHtml,catalog)).join('');
   const pending=(await env.MCP_DB.prepare("SELECT id,client_id,owner,repo,title,body,expires_at FROM approval_requests WHERE status='pending' AND expires_at>? ORDER BY created_at ASC LIMIT 50").bind(now()).all()).results||[];
   const pendingRows=pending.map(r=>renderPendingRow(r,escapeHtml)).join('');
   const rows=results.map(r=>renderConnectionRow(r,escapeHtml)).join('');
@@ -78,21 +90,34 @@ export async function adminApi(request: Request,env: Env,path: string): Promise<
     return json({ok:true});
   }
   if(path==='/admin/api/client-approval'){
-    let data;try{data=await bodyJson(request,4096);}catch{return json({error:'Invalid request'},400);}
+    let data;try{data=await bodyJson(request,32768);}catch{return json({error:'Invalid request'},400);}
     if(typeof data.clientId!=='string'||data.clientId.length>100)return json({error:'Invalid client'},400);
     if(data.approved===false){
       await revokeClientTokens(env,data.clientId);
-      await env.MCP_DB.prepare('UPDATE oauth_clients SET approved=0,allowed_owners=?,allow_write=0,auth_version=auth_version+1 WHERE client_id=?').bind('[]',data.clientId).run();
+      await env.MCP_DB.prepare('UPDATE oauth_clients SET approved=0,allowed_owners=?,allow_write=0,allowed_resources=?,allowed_tools=?,auth_version=auth_version+1 WHERE client_id=?').bind('[]','[]','[]',data.clientId).run();
       return json({ok:true});
     }
+    const catalog=policyCatalog(env);
+    const validResources=new Map(MCP_SERVERS.map(server=>[server.id,server.module.id]));
+    const toolModules=new Map(catalog.flatMap(module=>module.tools.map(tool=>[tool.id,module.id] as const)));
+    const validTools=new Set(toolModules.keys());
+    const allowedResources=data.allowedResources;
+    const allowedTools=data.allowedTools;
+    if(!Array.isArray(allowedResources)||allowedResources.length<1||allowedResources.length>50||allowedResources.some(x=>typeof x!=='string'||!validResources.has(x))||new Set(allowedResources).size!==allowedResources.length)return json({error:'Select one or more registered MCP Resources'},400);
+    if(!Array.isArray(allowedTools)||allowedTools.length<1||allowedTools.length>500||allowedTools.some(x=>typeof x!=='string'||!validTools.has(x))||new Set(allowedTools).size!==allowedTools.length)return json({error:'Select one or more registered tools'},400);
+    const resourceModules=new Set(allowedResources.map(id=>validResources.get(id)));
+    if(allowedTools.some(id=>!resourceModules.has(toolModules.get(id) as string)))return json({error:'A tool requires an authorized Resource from the same MCP'},400);
+    if(typeof data.allowWrite!=='boolean')return json({error:'Invalid write permission'},400);
+    const githubTools=allowedTools.some(id=>toolModules.get(id)==='github');
     const allowed=data.allowedOwners;
-    if(!Array.isArray(allowed)||allowed.length<1||allowed.length>30||allowed.some(x=>!validOwner(x)))return json({error:'At least one valid owner is required'},400);
-    const distinct=[...new Set(allowed.map(x=>x.toLowerCase()))];
+    if(githubTools&&(!Array.isArray(allowed)||allowed.length<1||allowed.length>30||allowed.some(x=>!validOwner(x))))return json({error:'At least one valid GitHub Owner is required for GitHub tools'},400);
+    const distinct=githubTools?[...new Set((allowed as string[]).map(x=>x.toLowerCase()))]:[];
     for(const owner of distinct){const exists=await env.MCP_DB.prepare('SELECT enabled FROM github_connections WHERE owner=?').bind(owner).first();if(!exists?.enabled)return json({error:'Owner missing or disabled: '+owner},400);}
+    if(data.allowWrite&&!allowedTools.includes(toolPolicyId('github','github_create_issue')))return json({error:'Write permission requires the GitHub create issue tool'},400);
     // Any permission update invalidates the previous authorization grant family,
     // even if the client is later re-approved.
     await revokeClientTokens(env,data.clientId);
-    const row=await env.MCP_DB.prepare('UPDATE oauth_clients SET approved=1,allowed_owners=?,allow_write=?,auth_version=auth_version+1 WHERE client_id=? RETURNING client_id').bind(JSON.stringify(distinct),data.allowWrite===true?1:0,data.clientId).first();
+    const row=await env.MCP_DB.prepare('UPDATE oauth_clients SET approved=1,allowed_owners=?,allow_write=?,allowed_resources=?,allowed_tools=?,auth_version=auth_version+1 WHERE client_id=? RETURNING client_id').bind(JSON.stringify(distinct),data.allowWrite?1:0,JSON.stringify(allowedResources),JSON.stringify(allowedTools),data.clientId).first();
     if(!row)return json({error:'Client not found'},404);
     return json({ok:true});
   }
