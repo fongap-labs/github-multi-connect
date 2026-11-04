@@ -1,27 +1,29 @@
-import {now,b64u,unb64u,encoder,randomId,equals,cookie,originOk,form,bodyJson,json,html,escapeHtml,validOwner} from './util.js';
-import {ingestionPublicJwk,decryptIngested,seal,unseal} from './crypto.js';
-import {apiFetch,githubPath,getOwnerToken,PublicError} from './github.js';
-import {ADMIN_SCRIPT,ADMIN_CSS} from './admin-ui.js';
-import {BRAND_NAME,BRAND_HEAD,BRAND_HEADER} from './brand.js';
-import {rateLimit} from './oauth.js';
-import {revokeClientTokens} from './tokens.js';
-import {renderAdminLogin,renderAdminDocument,renderClientRow,renderPendingRow,renderConnectionRow} from './i18n/zh-CN.js';
+import type { Env, AdminSession } from './types.ts';
+import {now,b64u,unb64u,encoder,randomId,equals,cookie,originOk,form,bodyJson,json,html,escapeHtml,validOwner} from './util.ts';
+import {ingestionPublicJwk,decryptIngested,seal,unseal} from './crypto.ts';
+import {apiFetch,githubPath,getOwnerToken,PublicError} from './github.ts';
+import {ADMIN_SCRIPT,ADMIN_CSS} from './admin-ui.ts';
+import {BRAND_NAME,BRAND_HEAD,BRAND_HEADER} from './brand.ts';
+import {rateLimit} from './oauth.ts';
+import {revokeClientTokens} from './tokens.ts';
+import {renderAdminLogin,renderAdminDocument,renderClientRow,renderPendingRow,renderConnectionRow} from './i18n/zh-CN.ts';
 
 const COOKIE='__Host-gmcp-admin';
 const locked=()=>html(renderAdminLogin({BRAND_HEAD,BRAND_NAME,BRAND_HEADER}));
-function sessionKey(env) { if(!env.COOKIE_SIGNING_KEY||env.COOKIE_SIGNING_KEY.length<32) throw new Error('COOKIE_SIGNING_KEY too short');return encoder.encode(env.COOKIE_SIGNING_KEY); }
-async function sign(env,body) {const key=await crypto.subtle.importKey('raw',sessionKey(env),{name:'HMAC',hash:'SHA-256'},false,['sign']);return b64u(new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(body))));}
-export async function getSession(request,env) {
+function sessionKey(env: Env) { if(!env.COOKIE_SIGNING_KEY||env.COOKIE_SIGNING_KEY.length<32) throw new Error('COOKIE_SIGNING_KEY too short');return encoder.encode(env.COOKIE_SIGNING_KEY); }
+async function sign(env: Env,body: string) {const key=await crypto.subtle.importKey('raw',sessionKey(env),{name:'HMAC',hash:'SHA-256'},false,['sign']);return b64u(new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(body))));}
+export async function getSession(request: Request,env: Env): Promise<AdminSession | null> {
   try {
     const [body,signature,extra]=(cookie(request,COOKIE)||'').split('.');if(!body||!signature||extra)return null;
-    const decoded=JSON.parse(new TextDecoder().decode(unb64u(body)));
+    const decoded=JSON.parse(new TextDecoder().decode(unb64u(body))) as unknown;
+    if(!decoded || typeof decoded!=='object' || !('exp' in decoded) || !('csrf' in decoded) || typeof decoded.exp!=='number')return null;
     if(!decoded.exp||decoded.exp<=now()||typeof decoded.csrf!=='string'||decoded.csrf.length!==43)return null;
     if(!(await equals(await sign(env,body),signature)))return null;
-    return decoded;
+    return {exp: decoded.exp, csrf: decoded.csrf};
   }catch{return null;}
 }
-function redirect(path,headers={}){return new Response(null,{status:303,headers:{'Location':path,'Cache-Control':'no-store',...headers}});}
-export async function adminLogin(request,env) {
+function redirect(path: string,headers: Record<string, string>={}){return new Response(null,{status:303,headers:{'Location':path,'Cache-Control':'no-store',...headers}});}
+export async function adminLogin(request: Request,env: Env): Promise<Response> {
   if(!originOk(request))return json({error:'Forbidden'},403);
   if(!(await rateLimit(env,request,'admin-login',15)))return json({error:'Rate limited'},429);
   const p=await form(request);const proposed=p.get('key')||'';
@@ -29,7 +31,7 @@ export async function adminLogin(request,env) {
   const data={exp:now()+1800,csrf:randomId()};const body=b64u(encoder.encode(JSON.stringify(data)));const value=body+'.'+await sign(env,body);
   return redirect('/admin',{'Set-Cookie':`${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=1800`});
 }
-export async function adminPage(request,env) {
+export async function adminPage(request: Request,env: Env): Promise<Response> {
   const session=await getSession(request,env);if(!session)return locked();
   const {results=[]}=await env.GITHUB_DB.prepare('SELECT owner,owner_kind,enabled,updated_at FROM github_connections ORDER BY owner').all();
   const clients=(await env.GITHUB_DB.prepare('SELECT client_id,client_name,redirect_uris,approved,allowed_owners,allow_write FROM oauth_clients ORDER BY created_at DESC LIMIT 100').all()).results||[];
@@ -39,18 +41,18 @@ export async function adminPage(request,env) {
   const rows=results.map(r=>renderConnectionRow(r,escapeHtml)).join('');
   return html(renderAdminDocument({session,BRAND_HEAD,BRAND_NAME,BRAND_HEADER,rows,clientRows,pendingRows}));
 }
-async function guard(request,env) {
+async function guard(request: Request,env: Env): Promise<AdminSession | null> {
   const session=await getSession(request,env);if(!session||!originOk(request))return null;
   const csrf=request.headers.get('X-CSRF-Token')||'';
   return await equals(csrf,session.csrf)?session:null;
 }
-export async function adminApi(request,env,path) {
+export async function adminApi(request: Request,env: Env,path: string): Promise<Response> {
   if(!(await getSession(request,env)))return json({error:'Unauthorized'},401);
   if(path==='/admin/api/public-key'&&request.method==='GET')return json(ingestionPublicJwk(env));
   if(request.method!=='POST'||!await guard(request,env))return json({error:'Forbidden'},403);
   if(path==='/admin/api/connections'){
     let data;try{data=await bodyJson(request,13000);}catch{return json({error:'Invalid request'},400);}
-    if(!validOwner(data.owner)||!['User','Organization'].includes(data.kind))return json({error:'Invalid owner or kind'},400);
+    if(!validOwner(data.owner)||(typeof data.kind!=='string'||!['User','Organization'].includes(data.kind)))return json({error:'Invalid owner or kind'},400);
     const owner=data.owner.toLowerCase();
     let token;
     try {token=await decryptIngested(env,data.encrypted);}catch{return json({error:'Unable to decrypt token'},400);}
@@ -96,7 +98,7 @@ export async function adminApi(request,env,path) {
   }
   if(path==='/admin/api/operation'){
     let data;try{data=await bodyJson(request,2048);}catch{return json({error:'Invalid request'},400);}
-    if(typeof data.id!=='string'||!/^[a-zA-Z0-9_-]{43}$/.test(data.id)||!['approve','deny'].includes(data.action))return json({error:'Invalid operation'},400);
+    if(typeof data.id!=='string'||!/^[a-zA-Z0-9_-]{43}$/.test(data.id)||typeof data.action!=='string'||!['approve','deny'].includes(data.action))return json({error:'Invalid operation'},400);
     if(data.action==='deny'){
       const row=await env.GITHUB_DB.prepare("UPDATE approval_requests SET status='denied' WHERE id=? AND status='pending' RETURNING id").bind(data.id).first();
       return row?json({ok:true,status:'denied'}):json({error:'Request already handled'},409);
@@ -128,11 +130,11 @@ export async function adminApi(request,env,path) {
       await env.GITHUB_DB.prepare('UPDATE github_connections SET key_id=?,iv=?,ciphertext=?,updated_at=? WHERE owner=? AND key_id=?').bind(sealed.key_id,sealed.iv,sealed.ciphertext,now(),row.owner,row.key_id).run();
     }
     const remaining=await env.GITHUB_DB.prepare('SELECT COUNT(*) AS cnt FROM github_connections WHERE key_id<>?').bind(env.ACTIVE_KEY_ID).first();
-    return json({ok:true,processed:results.length,remaining:remaining.cnt});
+    return json({ok:true,processed:results.length,remaining:remaining?.cnt??0});
   }
   return json({error:'Not found'},404);
 }
-export async function adminRoute(request,env) {
+export async function adminRoute(request: Request,env: Env): Promise<Response> {
   const path=new URL(request.url).pathname;
   if(path==='/admin/app.js'&&request.method==='GET')return new Response(ADMIN_SCRIPT,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
   if(path==='/admin/app.css'&&request.method==='GET')return new Response(ADMIN_CSS,{headers:{'Content-Type':'text/css; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});

@@ -1,9 +1,9 @@
-import {GATEWAY_DISCLAIMER} from '../src/i18n/zh-CN.js';
+import {GATEWAY_DISCLAIMER} from '../src/i18n/zh-CN.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker from '../src/index.js';
-import {BRAND_ICON,BRAND_NAME,BRAND_NOTE,BRAND_SOURCE,BRAND_VERSION} from '../src/brand.js';
-import {processMcp} from '../src/mcp.js';
+import worker from '../src/index.ts';
+import {BRAND_ICON,BRAND_NAME,BRAND_NOTE,BRAND_SOURCE,BRAND_VERSION} from '../src/brand.ts';
+import {processMcp} from '../src/mcp.ts';
 
 const origin='https://test.example';
 test('independent mark and administration UI cannot be confused with official GitHub MCP',async()=>{
@@ -38,4 +38,12 @@ test('MCP initialize identifies an independent gateway, not the official server'
   assert.equal(payload.result.serverInfo.version,'0.1.0');
   assert.match(payload.result.instructions,/NOT the official GitHub MCP Server/);
   assert.notEqual(payload.result.serverInfo.name,'github-mcp-server');
+});
+
+test('Admin browser script preserves public /admin/app.js path after TypeScript migration', async () => {
+  const { default: worker } = await import('../src/index.ts');
+  const response = await worker.fetch(new Request('https://example.com/admin/app.js'), {});
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('Content-Type'), /javascript/);
+  assert.ok((await response.text()).includes('crypto.subtle'));
 });

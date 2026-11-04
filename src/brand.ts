@@ -1,4 +1,4 @@
-import {GATEWAY_DISCLAIMER} from './i18n/zh-CN.js';
+import {GATEWAY_DISCLAIMER} from './i18n/zh-CN.ts';
 // Independent multi-connection mark. It does not reproduce any GitHub logo.
 export const BRAND_NAME = 'GitHub Multi Connect';
 export const BRAND_SOURCE = 'Fongap Labs';

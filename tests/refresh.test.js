@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import worker from '../src/index.js';
-import {sha} from '../src/util.js';
+import worker from '../src/index.ts';
+import {sha} from '../src/util.ts';
 
 if (!globalThis.crypto) globalThis.crypto=webcrypto;
 const origin='https://mcp.example';

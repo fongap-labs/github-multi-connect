@@ -9,18 +9,21 @@
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply GITHUB_DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply GITHUB_DB --remote",
-    "test": "node --experimental-sqlite --test tests/*.test.js",
-    "check": "node --check src/index.js && node --check src/admin.js && node --check src/oauth.js && node --check src/mcp.js && node --check src/github.js && node --check src/crypto.js && node --check src/tokens.js",
+    "test": "node --experimental-strip-types --experimental-sqlite --test tests/*.test.js",
+    "check": "npm run typecheck",
     "cf:db:create": "node scripts/with-secondary-cloudflare.mjs d1 create github-multi-connect",
     "cf:migrate": "node scripts/with-secondary-cloudflare.mjs d1 migrations apply GITHUB_DB --remote",
     "cf:deploy": "node scripts/with-secondary-cloudflare.mjs deploy --secrets-file .secrets.json",
-    "cf:secrets": "node scripts/with-secondary-cloudflare.mjs secret bulk .secrets.json"
+    "cf:secrets": "node scripts/with-secondary-cloudflare.mjs secret bulk .secrets.json",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "validate": "npm run check && npm test"
   },
   "devDependencies": {
-    "wrangler": "^4.44.0"
+    "wrangler": "^4.44.0",
+    "typescript": "5.8.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.16.0"
   },
   "author": "Fongap Labs"
 }
