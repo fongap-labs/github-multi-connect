@@ -1,2 +1,0 @@
-- 新增: MCP Hub 支持源仓库 GitHub Environment 手动 staging 部署与运行时密钥隔离。
-- 安全 [security]: 校验中央来源状态和运行记录，禁止失败或缺少密钥时部署。
