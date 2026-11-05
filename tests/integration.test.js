@@ -13,6 +13,7 @@ function d1(){
   const sqlite=new DatabaseSync(':memory:');
   sqlite.exec(readFileSync(new URL('../migrations/0001_init.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0002_refresh_token_rotation.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('../migrations/0003_resource_tool_policy.sql',import.meta.url),'utf8'));
   const db={
     prepare(sql){
       return {
