@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 新增运维迁移与验收手册，明确环境、密钥、数据迁移和上线核对步骤。
+
 - 修复: MCP Hub 共享 production 部署环境，运行时业务密钥留在 Cloudflare Worker Secrets，不再从中央部署转交。
 
 - 新增: 声明可选的 Runtime 派发密钥供中央部署安全下发。

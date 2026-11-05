@@ -1,5 +1,7 @@
 # 中央部署操作
 
+完整的环境配置、密钥归属、手动部署和上线核对步骤见[运维迁移和验收手册](OPERATIONS_MIGRATION_ACCEPTANCE.md)。
+
 ## 1. 配置归属
 
 部署凭据在中央管理；Worker 运行时密钥留在 Cloudflare Secrets。

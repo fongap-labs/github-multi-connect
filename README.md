@@ -70,7 +70,7 @@ MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https:/
 4. 旧 OAuth 资源 URI 不能转换成新域名的授权；客户端必须针对 `https://mcp.135468.xyz` 或 `https://mcp.135468.xyz/github` 重新授权。
 5. 只能通过 Action Worker 手动生产部署，中央确认 CI Evidence 与 Main Write Guard 后执行；Worker 回滚不会撤销 D1 数据迁移。
 
-详细前置检查见 [MCP Hub 迁移说明](docs/MCP_HUB_MIGRATION.md)。
+详细前置检查见 [迁移说明](docs/MCP_HUB_MIGRATION.md) 与 [运维迁移和验收手册](docs/OPERATIONS_MIGRATION_ACCEPTANCE.md)。
 
 ### MCP 服务模块
 
