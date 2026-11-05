@@ -42,7 +42,10 @@ export async function adminPage(request: Request,env: Env): Promise<Response> {
   const rows=results.map(r=>renderConnectionRow(r,escapeHtml)).join('');
   const runnerRows=(await listRunners(env)).map(r=>{
     const seen=r.observedAt?new Date(r.observedAt).toISOString().slice(0,19).replace('T',' ')+' UTC':'从未上报';
-    return `<tr><td><strong>${escapeHtml(r.displayName)}</strong><div><code>${escapeHtml(r.runnerId)}</code></div></td><td>${escapeHtml(r.capabilities.join(', '))}</td><td>${r.activeConcurrency}/${r.maxConcurrency}</td><td>${escapeHtml(r.availability)}</td><td>${escapeHtml(seen)}</td><td>${r.availability==='unavailable'?'<span>已停用</span>':`<button type="button" class="revoke-runner danger" data-runner="${escapeHtml(r.runnerId)}">撤销</button>`}</td></tr>`;
+    const action=r.availability==='unavailable'
+      ? '<span>已停用</span>'
+      : `<button type="button" class="revoke-runner danger" data-runner="${escapeHtml(r.runnerId)}">撤销</button>`;
+    return `<tr><td><strong>${escapeHtml(r.displayName)}</strong><div><code>${escapeHtml(r.runnerId)}</code></div></td><td>${escapeHtml(r.capabilities.join(', '))}</td><td>${r.activeConcurrency}/${r.maxConcurrency}</td><td>${escapeHtml(r.availability)}</td><td>${escapeHtml(seen)}</td><td>${action}</td></tr>`;
   }).join('');
   const page=renderAdminDocument({session,BRAND_HEAD,BRAND_NAME,BRAND_HEADER,rows,clientRows,pendingRows});
   const runnerSection=`<h2>Runner 注册表与资源租约</h2><p>凭据由 Hub 签发且只显示一次。管理员限定 Runner 能力和并发上限；撤销会停用凭据并释放该 Runner 的 Hub 租约。</p><table><thead><tr><th>Runner</th><th>能力</th><th>活动并发 / 上限</th><th>状态</th><th>最近心跳</th><th>操作</th></tr></thead><tbody>${runnerRows||'<tr><td colspan="6">尚未注册 Runner</td></tr>'}</tbody></table><form id="runner-add"><label>Runner 名称<input name="displayName" maxlength="80" required></label><label>允许能力（英文逗号分隔）<input name="capabilities" placeholder="coding.patch,coding.test" required></label><label>最大并发<input name="maxConcurrency" type="number" min="1" max="128" value="1" required></label><button>签发注册凭据</button></form>`;
