@@ -34,7 +34,7 @@ MCP_KEYRING_JSON
 MCP_INGEST_JWK
 
 # 中央部署策略合并后可额外配置：
-# MCP_RUNTIME_KEY（可选，至少 32 字符；未配置时保持派发关闭）
+# MCP_RUNTIME_KEY（可选，至少 32 字符；首次未配置时派发关闭）
 
 Action Worker / Actions Secrets
 CLOUDFLARE_API_TOKEN_SECONDARY
@@ -66,6 +66,8 @@ CLOUDFLARE_API_TOKEN_SECONDARY
 `MCP_D1_ID` 必须是目标数据库的真实标识。保留原密钥材料并离线备份；确认恢复可靠之前不得删除源库。
 
 Cloudflare 端需先建同账户队列 `mcp-hub-dispatch` 和死信队列 `mcp-hub-dispatch-dlq`。派发仅在中央可选密钥策略已合并、`mcp-hub-ops` 配置 `MCP_RUNTIME_KEY` 并完成新的中央部署后启用。
+
+关闭已启用的派发时，须在 Cloudflare Worker 上明确删除 `MCP_RUNTIME_KEY` 并验证接口拒绝未授权请求；Wrangler 部署省略 Secret 不会删除此前的值。
 
 ## 3. 部署执行
 

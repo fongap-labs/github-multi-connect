@@ -57,7 +57,7 @@ MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https:/
 | Action Worker · Actions Secrets | `CLOUDFLARE_API_TOKEN_SECONDARY` |
 | Action Worker · `mcp-hub-ops` Environment Secrets | 必需：`MCP_ADMIN_KEY`, `MCP_APPROVAL_KEY`, `MCP_COOKIE_KEY`, `MCP_KEYRING_JSON`, `MCP_INGEST_JWK`；启用 Runtime 派发时还需 `MCP_RUNTIME_KEY` |
 
-**跨仓库密钥不可读**：原 MCP Hub Environment Secrets 不能由中央 Job 自动获取；须由管理员在 Action Worker 的 Environment 中安全配置**原样相同**的密钥值，并保留独立离线备份。不得生成新的 keyring/JWK 覆盖既有密文，禁止回退到其他 Token。`MCP_RUNTIME_KEY` 已作为可选项写入源仓库部署声明；须先合并 Action Worker 的对应中央策略变更，随后在 `mcp-hub-ops` Environment 中配置至少 32 字符的密钥，下一次中央部署才会启用 Runtime 派发。未配置时派发保持关闭。安装依赖和测试的子进程不接收运行时凭据。
+**跨仓库密钥不可读**：原 MCP Hub Environment Secrets 不能由中央 Job 自动获取；须由管理员在 Action Worker 的 Environment 中安全配置**原样相同**的密钥值，并保留独立离线备份。不得生成新的 keyring/JWK 覆盖既有密文，禁止回退到其他 Token。`MCP_RUNTIME_KEY` 已作为可选项写入源仓库部署声明；须先合并 Action Worker 的对应中央策略变更，随后在 `mcp-hub-ops` Environment 中配置至少 32 字符的密钥，下一次中央部署才会启用 Runtime 派发。首次未配置时派发保持关闭；启用后若需关闭，须从 Cloudflare Worker 明确删除该 Secret 并验证，后续部署省略它不会自动删除旧值。安装依赖和测试的子进程不接收运行时凭据。
 
 部署入口参数：`source_repository=fongap-labs/mcp-hub`、`environment=mcp-hub-ops`、`product` 与 `source_sha` 留空，`main_write_guard_bypass=false`。参见 [部署配置说明](docs/CENTRAL_DEPLOY.md)。本次更改不会部署 Cloudflare 或删除旧 D1。
 
