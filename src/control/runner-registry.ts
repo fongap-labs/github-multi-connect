@@ -9,7 +9,7 @@ import { bodyJson, json, now, randomId, sha } from '../util.ts';
 const RUNNER_TOKEN_PREFIX = 'mcrn_';
 const MIN_LEASE_TTL_SECONDS = 60;
 const MAX_LEASE_TTL_SECONDS = 900;
-const RUNNER_SCOPES = ['runner:register', 'runner:heartbeat', 'runner:quota', 'runner:dispatch'] as const;
+const RUNNER_SCOPES = ['runner:register', 'runner:heartbeat'] as const;
 
 export type RunnerRegistryErrorCode = 'invalid_request' | 'not_found' | 'forbidden' | 'conflict' | 'unavailable';
 export class RunnerRegistryError extends Error {
@@ -155,7 +155,9 @@ export async function heartbeatRunner(request: Request, env: Env): Promise<Respo
   } catch (error) { return mapProtocolError(error); }
 }
 
-function validLeaseInput(input: { runnerId: unknown; idempotencyKey: unknown; resourceKey: unknown; ttlSeconds: unknown }): boolean {
+function validLeaseInput(
+  input: { runnerId: unknown; idempotencyKey: unknown; resourceKey: unknown; ttlSeconds: unknown }
+): input is { runnerId: string; idempotencyKey: string; resourceKey: string; ttlSeconds: number } {
   return typeof input.runnerId === 'string' && /^runner_[A-Za-z0-9_-]{43}$/.test(input.runnerId) &&
     typeof input.idempotencyKey === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(input.idempotencyKey) &&
     typeof input.resourceKey === 'string' && input.resourceKey.length >= 1 && input.resourceKey.length <= 200 &&
@@ -173,7 +175,7 @@ function leaseFromRow(row: Record<string, unknown>): RunnerLease {
 export async function acquireRunnerLease(env: Env, input: { runnerId: unknown; idempotencyKey: unknown; resourceKey: unknown; ttlSeconds: unknown }, at = now()): Promise<RunnerLease> {
   if (!validLeaseInput(input) || !Number.isSafeInteger(at)) throw new RunnerRegistryError('invalid_request');
   const leaseId = 'lease_' + randomId();
-  const expiresAt = at + (input.ttlSeconds as number);
+  const expiresAt = at + input.ttlSeconds;
   const inserted = await env.MCP_DB.prepare(`INSERT INTO runner_leases(lease_id,runner_id,idempotency_key,resource_key,acquired_at,expires_at)
     SELECT ?,r.runner_id,?,?,?,? FROM runners r
     WHERE r.runner_id=? AND r.enabled=1 AND r.registered_at IS NOT NULL AND r.observed_at IS NOT NULL AND r.expires_at>?
@@ -224,12 +226,6 @@ export async function adminRevokeRunner(env: Env, request: Request): Promise<Res
     const changed = await env.MCP_DB.prepare('UPDATE runners SET enabled=0,updated_at=? WHERE runner_id=? AND enabled=1 RETURNING runner_id').bind(at, data.runnerId).first();
     if (!changed) throw new RunnerRegistryError('not_found');
     await env.MCP_DB.prepare('UPDATE runner_credentials SET revoked_at=? WHERE runner_id=? AND revoked_at IS NULL').bind(at, data.runnerId).run();
-    await env.MCP_DB.prepare(`UPDATE runner_dispatches SET status='queued',runner_id=NULL,lease_id=NULL,offered_at=NULL,
-      offer_expires_at=NULL,published_at=NULL,quota_reserved=0,last_reason_code='runner_revoked'
-      WHERE runner_id=? AND status='offered'`).bind(data.runnerId).run();
-    await env.MCP_DB.prepare(`UPDATE runner_dispatches SET status='held',
-      runtime_state=COALESCE(runtime_state,'side_effects_uncertain') WHERE runner_id=? AND status IN ('accepted','cancel_requested')`)
-      .bind(data.runnerId).run();
     await env.MCP_DB.prepare('UPDATE runner_leases SET released_at=? WHERE runner_id=? AND released_at IS NULL').bind(at, data.runnerId).run();
     return json({ ok: true });
   } catch (error) { return mapProtocolError(error); }
