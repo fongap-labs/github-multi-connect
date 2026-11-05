@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {loadDeployConfig,buildWranglerConfig,verifyDeployment,SECRET_NAMES} from '../scripts/deployment-config.mjs';
+import {prepareWorkerSecrets} from '../scripts/prepare-worker-secrets.mjs';
 const sha='a'.repeat(40);
 function env(overrides={}){return {
   CLOUDFLARE_ACCOUNT_ID_SECONDARY:'b'.repeat(32),
@@ -94,6 +95,24 @@ test('central deploy strips runtime Secrets from npm child processes',async()=>{
   assert.match(script,/npm run validate/);
   for(const n of ['MCP_ADMIN_KEY','MCP_APPROVAL_KEY','MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK'])
     assert.match(script,new RegExp(n));
+});
+
+test('central deploy declares the runtime key as optional and writes it only when configured',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const {resolve}=await import('node:path');
+  const required=readFileSync(new URL('../.github/deploy.secrets.required',import.meta.url),'utf8');
+  const allowed=readFileSync(new URL('../.github/deploy.secrets.allowed',import.meta.url),'utf8');
+  assert.doesNotMatch(required,/^MCP_RUNTIME_KEY$/m);
+  assert.match(allowed,/^MCP_RUNTIME_KEY$/m);
+  const secrets={MCP_ADMIN_KEY:'admin',MCP_APPROVAL_KEY:'approval',MCP_COOKIE_KEY:'cookie',
+    MCP_KEYRING_JSON:'keyring',MCP_INGEST_JWK:'jwk'};
+  let file='';
+  const writer=(_path,body)=>{file=body;};
+  assert.equal(prepareWorkerSecrets(secrets,resolve('worker-secrets.json'),writer),5);
+  assert.equal(Object.hasOwn(JSON.parse(file),'MCP_RUNTIME_KEY'),false);
+  assert.equal(prepareWorkerSecrets({...secrets,MCP_RUNTIME_KEY:'x'.repeat(32)},resolve('worker-secrets.json'),writer),6);
+  assert.equal(JSON.parse(file).MCP_RUNTIME_KEY,'x'.repeat(32));
+  assert.throws(()=>prepareWorkerSecrets({...secrets,MCP_RUNTIME_KEY:'short'},resolve('worker-secrets.json'),writer),/at least 32/);
 });
 
 test('central deploy uses supported Wrangler D1 remote migration arguments',async()=>{

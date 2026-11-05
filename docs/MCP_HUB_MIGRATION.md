@@ -98,7 +98,7 @@ Action Worker → 手动 · 部署服务
               → 固定提交 → scripts/deploy.sh
 ```
 
-在 `mcp-hub-ops` 配置五项原始运行时密钥；`CLOUDFLARE_API_TOKEN_SECONDARY` 属于中央 Secrets，`CLOUDFLARE_ACCOUNT_ID_SECONDARY` 属于中央 Variables。中央秘密策略当前批准六项必需的部署 Secret，不允许凭据回退。运行时派发必须在中央白名单明确允许可选 `MCP_RUNTIME_KEY`、并确认密钥可安全下发后才能启用，否则保持关闭。
+在 `mcp-hub-ops` 配置五项原始运行时密钥；`CLOUDFLARE_API_TOKEN_SECONDARY` 属于中央 Secrets，`CLOUDFLARE_ACCOUNT_ID_SECONDARY` 属于中央 Variables。运行时派发还需中央策略允许可选 `MCP_RUNTIME_KEY`，并在 `mcp-hub-ops` 配置该密钥后重新部署。首次启用前缺少任一条件时保持关闭；已启用后撤销需在 Cloudflare 明确删除 Worker Secret，不能只从中央 Environment 移除，不允许凭据回退。
 
 ## 5. 切换安全
 
