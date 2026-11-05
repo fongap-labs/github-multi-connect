@@ -53,7 +53,18 @@ export interface D1Statement {
 }
 export interface D1Database {
   prepare(query: string): D1Statement;
+  batch(statements: D1Statement[]): Promise<Array<{success?: boolean; results?: DbRow[]}>>;
 }
+export interface QueueProducer {
+  send(body: unknown, options?: {contentType?: 'json' | 'text' | 'bytes' | 'v8'; delaySeconds?: number}): Promise<void>;
+  sendBatch(messages: Array<{body: unknown; contentType?: 'json' | 'text' | 'bytes' | 'v8'; delaySeconds?: number}>): Promise<void>;
+}
+export interface QueueMessage<T = unknown> {
+  body: T;
+  ack(): void;
+  retry(options?: {delaySeconds?: number}): void;
+}
+export interface QueueBatch<T = unknown> { queue: string; messages: QueueMessage<T>[]; }
 export interface Env {
   MCP_DB: D1Database;
   MCP_PUBLIC_URL: string;
@@ -67,6 +78,8 @@ export interface Env {
   MCP_KEYRING_JSON: string;
   MCP_ACTIVE_ID: string;
   MCP_INGEST_JWK: string;
+  MCP_RUNTIME_KEY?: string;
+  MCP_DISPATCH_QUEUE?: QueueProducer;
 }
 export interface McpAuth {
   clientId: string;

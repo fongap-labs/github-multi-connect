@@ -6,7 +6,8 @@
   "workers_dev": false,
   "triggers": {
     "crons": [
-      "0 4 * * *"
+      "0 4 * * *",
+      "* * * * *"
     ]
   },
   "preview_urls": false,
@@ -15,5 +16,20 @@
       "pattern": "mcp.135468.xyz",
       "custom_domain": true
     }
-  ]
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "MCP_DISPATCH_QUEUE", "queue": "mcp-hub-dispatch" }
+    ],
+    "consumers": [
+      {
+        "queue": "mcp-hub-dispatch",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "mcp-hub-dispatch-dlq",
+        "retry_delay": 30
+      }
+    ]
+  }
 }

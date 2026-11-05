@@ -24,10 +24,14 @@ for required in CLOUDFLARE_API_TOKEN_SECONDARY MCP_ADMIN_KEY MCP_APPROVAL_KEY MC
     exit 77
   fi
 done
+if [[ -n "${MCP_RUNTIME_KEY:-}" && ${#MCP_RUNTIME_KEY} -lt 32 ]]; then
+  echo '::error::MCP_RUNTIME_KEY must contain at least 32 characters.' >&2
+  exit 65
+fi
 
 # Secrets are stripped from npm install/test subprocesses; only Wrangler receives them.
 safe_env=(env)
-for name in CLOUDFLARE_API_TOKEN_SECONDARY MCP_ADMIN_KEY MCP_APPROVAL_KEY MCP_COOKIE_KEY MCP_KEYRING_JSON MCP_INGEST_JWK; do
+for name in CLOUDFLARE_API_TOKEN_SECONDARY MCP_ADMIN_KEY MCP_APPROVAL_KEY MCP_COOKIE_KEY MCP_KEYRING_JSON MCP_INGEST_JWK MCP_RUNTIME_KEY; do
   safe_env+=("-u" "$name")
 done
 "${safe_env[@]}" npm install --ignore-scripts --no-audit --no-fund

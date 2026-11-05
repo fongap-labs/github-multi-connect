@@ -33,6 +33,9 @@ MCP_COOKIE_KEY
 MCP_KEYRING_JSON
 MCP_INGEST_JWK
 
+# 仅在中央部署允许名单已审核放行时，额外配置：
+# MCP_RUNTIME_KEY（可选；未放行时保持派发关闭）
+
 Action Worker / Actions Secrets
 CLOUDFLARE_API_TOKEN_SECONDARY
 ```
@@ -61,6 +64,8 @@ CLOUDFLARE_API_TOKEN_SECONDARY
 ```
 
 `MCP_D1_ID` 必须是目标数据库的真实标识。保留原密钥材料并离线备份；确认恢复可靠之前不得删除源库。
+
+Cloudflare 端需先建同账户队列 `mcp-hub-dispatch` 和死信队列 `mcp-hub-dispatch-dlq`。派发在 `MCP_RUNTIME_KEY` 未纳入中央可选密钥允许名单时必须保持关闭。
 
 ## 3. 部署执行
 

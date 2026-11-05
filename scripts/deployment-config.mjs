@@ -7,7 +7,7 @@ const DATABASE_NAME = 'mcp-hub';
 const BUILD_RE = /^[0-9a-f]{40}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTIVE_RE = /^[A-Za-z0-9_-]{1,32}$/;
-const SECRET_NAMES = ['MCP_ADMIN_KEY', 'MCP_APPROVAL_KEY', 'MCP_COOKIE_KEY', 'MCP_KEYRING_JSON', 'MCP_INGEST_JWK'];
+const SECRET_NAMES = ['MCP_ADMIN_KEY', 'MCP_APPROVAL_KEY', 'MCP_COOKIE_KEY', 'MCP_KEYRING_JSON', 'MCP_INGEST_JWK', 'MCP_RUNTIME_KEY'];
 
 export function loadDeployConfig(env) {
   const errors = [];
@@ -62,7 +62,12 @@ export function buildWranglerConfig(config, root=process.cwd()) {
       MCP_BUILD_SHA: config.buildSha,
     },
     d1_databases: [{binding:'MCP_DB',database_name:DATABASE_NAME,database_id:config.databaseId,migrations_dir:resolve(root,'migrations')}],
-    triggers: {crons:['0 4 * * *']},
+    triggers: {crons:['0 4 * * *','* * * * *']},
+    queues: {
+      producers:[{binding:'MCP_DISPATCH_QUEUE',queue:'mcp-hub-dispatch'}],
+      consumers:[{queue:'mcp-hub-dispatch',max_batch_size:10,max_batch_timeout:5,max_retries:5,
+        dead_letter_queue:'mcp-hub-dispatch-dlq',retry_delay:30}],
+    },
   };
 }
 

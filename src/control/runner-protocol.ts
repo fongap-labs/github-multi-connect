@@ -4,7 +4,7 @@ export const RUNNER_MAX_CAPABILITIES = 64;
 export const RUNNER_MAX_CONCURRENCY = 128;
 
 export type RunnerAvailability = 'available' | 'busy' | 'unavailable' | 'unknown';
-export type RunnerScope = 'runner:register' | 'runner:heartbeat';
+export type RunnerScope = 'runner:register' | 'runner:heartbeat' | 'runner:quota' | 'runner:dispatch';
 
 /** Created by the trusted authentication adapter; never parsed from a Runner payload. */
 export interface AuthenticatedRunner {

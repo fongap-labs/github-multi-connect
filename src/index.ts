@@ -6,6 +6,8 @@ import {adminRoute} from './admin.ts';
 import {serverForPath,serverForMetadata} from './gateway/registry.ts';
 import {processMcp} from './gateway/router.ts';
 import {heartbeatRunner,registerRunner} from './control/runner-registry.ts';
+import {acceptRunnerDispatch,cancelDispatch,consumeDispatchQueue,createDispatch,getDispatchStatus,maintainDispatches,
+  nextRunnerDispatch,reconcileDispatch,renewRunnerDispatch,rejectRunnerDispatch,reportRunnerQuota} from './control/dispatch.ts';
 
 export default {
   async fetch(request: Request,env: Env): Promise<Response> {
@@ -14,7 +16,8 @@ export default {
       if(path==='/brand/icon.svg'&&request.method==='GET')return new Response(BRAND_ICON,{headers:{'Content-Type':'image/svg+xml; charset=utf-8','Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff'}});
       if(path==='/health'&&request.method==='GET'){
         const ready=Boolean(env.MCP_DB && env.MCP_PUBLIC_URL && env.MCP_ADMIN_KEY && env.MCP_APPROVAL_KEY && env.MCP_COOKIE_KEY && env.MCP_KEYRING_JSON && env.MCP_ACTIVE_ID && env.MCP_INGEST_JWK);
-        return json({status:ready?'ok':'unavailable',ready,build:env.MCP_BUILD_SHA||null},ready?200:503);
+        return json({status:ready?'ok':'unavailable',ready,build:env.MCP_BUILD_SHA||null,
+          dispatchEnabled:Boolean(env.MCP_RUNTIME_KEY&&env.MCP_RUNTIME_KEY.length>=32&&env.MCP_DISPATCH_QUEUE)},ready?200:503);
       }
       const metadataServer=serverForMetadata(path);
       if(metadataServer)return protectedMetadata(env,metadataServer);
@@ -24,6 +27,15 @@ export default {
       if(path==='/oauth/revoke'&&request.method==='POST')return revokeToken(request,env);
       if(path==='/runner/register'&&request.method==='POST')return registerRunner(request,env);
       if(path==='/runner/heartbeat'&&request.method==='POST')return heartbeatRunner(request,env);
+      if(path==='/runner/quota'&&request.method==='POST')return reportRunnerQuota(request,env);
+      if(path==='/runner/dispatches/next'&&request.method==='GET')return nextRunnerDispatch(request,env);
+      if(path==='/runner/dispatches/accept'&&request.method==='POST')return acceptRunnerDispatch(request,env);
+      if(path==='/runner/dispatches/reject'&&request.method==='POST')return rejectRunnerDispatch(request,env);
+      if(path==='/runner/dispatches/renew'&&request.method==='POST')return renewRunnerDispatch(request,env);
+      if(path==='/control/dispatch'&&request.method==='POST')return createDispatch(request,env);
+      if(path==='/control/dispatch'&&request.method==='GET')return getDispatchStatus(request,env);
+      if(path==='/control/dispatch/cancel'&&request.method==='POST')return cancelDispatch(request,env);
+      if(path==='/control/dispatch/reconcile'&&request.method==='POST')return reconcileDispatch(request,env);
       if(path==='/authorize')return request.method==='GET'?authorizeGet(request,env):request.method==='POST'?authorizePost(request,env):json({error:'Method not allowed'},405);
       if(path.startsWith('/admin'))return adminRoute(request,env);
       const mcpServer=serverForPath(path);
@@ -38,5 +50,11 @@ export default {
       return json({error:'Internal error'},500);
     }
   },
-  async scheduled(_event: unknown,env: Env): Promise<void> {try{await cleanExpired(env);}catch{/* No credentials or raw errors in logs. */}}
+  async queue(batch: Parameters<typeof consumeDispatchQueue>[0],env: Env): Promise<void> {
+    await consumeDispatchQueue(batch,env);
+  },
+  async scheduled(event: {cron?:string},env: Env): Promise<void> {
+    if(event.cron==='* * * * *') { try{await maintainDispatches(env);}catch{/* D1 outbox retries on the next tick. */} }
+    if(event.cron==='0 4 * * *'||!event.cron) { try{await cleanExpired(env);}catch{/* No credentials or raw errors in logs. */} }
+  }
 };
