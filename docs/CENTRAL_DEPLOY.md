@@ -2,7 +2,7 @@
 
 ## 1. 配置归属
 
-部署密钥必须由中央保存。
+部署凭据在中央管理；Worker 运行时密钥留在 Cloudflare Secrets。
 
 ### ❌ 错误做法 / 反面教材
 
@@ -26,21 +26,22 @@ MCP_OAUTH_TTL=900
 GMC_WRITE_MODE=disabled
 GMC_CONTENT_MODE=disabled
 
+Action Worker / Environments / production / Secrets
+CLOUDFLARE_API_TOKEN_SECONDARY
+
 Action Worker / Environments / mcp-hub-ops
+# 仅供专属运维任务；普通部署不使用
+
+Cloudflare / Workers / mcp-hub / Secrets
 MCP_ADMIN_KEY
 MCP_APPROVAL_KEY
 MCP_COOKIE_KEY
 MCP_KEYRING_JSON
 MCP_INGEST_JWK
-
-# 中央部署策略合并后可额外配置：
-# MCP_RUNTIME_KEY（可选，至少 32 字符；首次未配置时派发关闭）
-
-Action Worker / Actions Secrets
-CLOUDFLARE_API_TOKEN_SECONDARY
+MCP_RUNTIME_KEY（可选；至少 32 字符）
 ```
 
-`AW_REPOSITORY_POLICY` 必须允许此仓库部署。专用密钥缺失即失败，不得自动回退。
+`AW_REPOSITORY_POLICY` 必须允许此仓库部署。生产部署凭据缺失即失败，不得自动回退。Cloudflare Worker Secrets 的真实状态需运维人员核实。
 
 ## 2. 数据迁移
 
@@ -65,7 +66,7 @@ CLOUDFLARE_API_TOKEN_SECONDARY
 
 `MCP_D1_ID` 必须是目标数据库的真实标识。保留原密钥材料并离线备份；确认恢复可靠之前不得删除源库。
 
-Cloudflare 端需先建同账户队列 `mcp-hub-dispatch` 和死信队列 `mcp-hub-dispatch-dlq`。派发仅在中央可选密钥策略已合并、`mcp-hub-ops` 配置 `MCP_RUNTIME_KEY` 并完成新的中央部署后启用。
+Cloudflare 端需先建同账户队列 `mcp-hub-dispatch` 和死信队列 `mcp-hub-dispatch-dlq`。派发能力由 Worker 的 `MCP_RUNTIME_KEY` 与队列绑定决定；普通部署不从 GitHub 写入运行时密钥。
 
 关闭已启用的派发时，须在 Cloudflare Worker 上明确删除 `MCP_RUNTIME_KEY` 并验证接口拒绝未授权请求；Wrangler 部署省略 Secret 不会删除此前的值。
 
@@ -88,13 +89,13 @@ Cloudflare 端需先建同账户队列 `mcp-hub-dispatch` 和死信队列 `mcp-h
 ```text
 Action Worker → 手动 · 部署服务
 source_repository=fongap-labs/mcp-hub
-environment=mcp-hub-ops
+environment=production
 source_sha=留空
 product=留空
 Main Write Guard bypass=禁用
 ```
 
-中央校验来源和审批后执行 `scripts/deploy.sh`：检查依赖、写入受限临时密钥文件、预检、数据库迁移、部署及根入口、GitHub、授权和提交哈希的健康检查。
+中央校验来源和审批后执行 `scripts/deploy.sh`：检查依赖与部署凭据、预检、数据库迁移、普通 Wrangler 部署，以及根入口、GitHub、授权和提交哈希健康检查。不得生成运行时密钥文件或使用 `--secrets-file`。部署未传某个 Secret，不代表 Cloudflare 已删除它。
 
 ## 4. 回滚约束
 

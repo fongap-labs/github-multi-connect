@@ -49,17 +49,18 @@
 
 ### 统一交由 Action Worker 部署
 
-MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https://github.com/fongap-labs/action-worker/actions/workflows/deploy-source-script.yml) 的 `source-script` 部署合同。MCP Hub 仓库**不保留独立部署工作流**。中央先验证不可变 main SHA、CI Evidence、Main Write Guard、环境和 runner 策略，再运行审核过的 `scripts/deploy.sh`。仅允许 `mcp-hub-ops` 手动部署。
+MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https://github.com/fongap-labs/action-worker/actions/workflows/deploy-source-script.yml) 的 `source-script` 部署合同。MCP Hub 仓库**不保留独立部署工作流**。中央先验证不可变 main SHA、CI Evidence、Main Write Guard、环境和 runner 策略，再运行审核过的 `scripts/deploy.sh`。仅允许 `production` 手动部署，`mcp-hub-ops` 不用于生产部署。
 
 | 配置位置 | 名称 |
 | --- | --- |
 | Action Worker · Actions Variables | `CLOUDFLARE_ACCOUNT_ID_SECONDARY`, `MCP_D1_ID`, `MCP_PUBLIC_URL=https://mcp.135468.xyz`, `MCP_ACTIVE_ID`, `MCP_OAUTH_TTL`, `GMC_WRITE_MODE`, `GMC_CONTENT_MODE` |
-| Action Worker · Actions Secrets | `CLOUDFLARE_API_TOKEN_SECONDARY` |
-| Action Worker · `mcp-hub-ops` Environment Secrets | 必需：`MCP_ADMIN_KEY`, `MCP_APPROVAL_KEY`, `MCP_COOKIE_KEY`, `MCP_KEYRING_JSON`, `MCP_INGEST_JWK`；启用 Runtime 派发时还需 `MCP_RUNTIME_KEY` |
+| Action Worker · `production` Environment Secrets | `CLOUDFLARE_API_TOKEN_SECONDARY`（运维人员核实配置） |
+| Action Worker · `mcp-hub-ops` Environment | 专属运维任务；不向部署 Job 提供业务密钥 |
+| Cloudflare · `mcp-hub` Worker Secrets | `MCP_ADMIN_KEY`, `MCP_APPROVAL_KEY`, `MCP_COOKIE_KEY`, `MCP_KEYRING_JSON`, `MCP_INGEST_JWK`；可选 `MCP_RUNTIME_KEY` |
 
-**跨仓库密钥不可读**：原 MCP Hub Environment Secrets 不能由中央 Job 自动获取；须由管理员在 Action Worker 的 Environment 中安全配置**原样相同**的密钥值，并保留独立离线备份。不得生成新的 keyring/JWK 覆盖既有密文，禁止回退到其他 Token。`MCP_RUNTIME_KEY` 已作为可选项写入源仓库部署声明；须先合并 Action Worker 的对应中央策略变更，随后在 `mcp-hub-ops` Environment 中配置至少 32 字符的密钥，下一次中央部署才会启用 Runtime 派发。首次未配置时派发保持关闭；启用后若需关闭，须从 Cloudflare Worker 明确删除该 Secret 并验证，后续部署省略它不会自动删除旧值。安装依赖和测试的子进程不接收运行时凭据。
+**运行时密钥不经 GitHub 部署中转**：六项 Worker 业务密钥由 Cloudflare Worker Secrets 管理，并保留原有密钥材料和离线备份；不得重新生成 keyring/JWK 覆盖既有密文。可选 `MCP_RUNTIME_KEY` 仍用于 Worker Runtime 派发授权（至少 32 字符）；普通部署不读取或上传该密钥。停用任一既存 Worker Secret 必须在 Cloudflare 显式删除并核验；部署省略不代表线上删除。安装和测试的子进程不接收运行时凭据。
 
-部署入口参数：`source_repository=fongap-labs/mcp-hub`、`environment=mcp-hub-ops`、`product` 与 `source_sha` 留空，`main_write_guard_bypass=false`。参见 [部署配置说明](docs/CENTRAL_DEPLOY.md)。本次更改不会部署 Cloudflare 或删除旧 D1。
+部署入口参数：`source_repository=fongap-labs/mcp-hub`、`environment=production`、`product` 与 `source_sha` 留空，`main_write_guard_bypass=false`。参见 [部署配置说明](docs/CENTRAL_DEPLOY.md)。本次更改不会部署 Cloudflare 或删除旧 D1。
 
 ### D1 与 OAuth 迁移
 
@@ -67,7 +68,7 @@ MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https:/
 2. 创建新 D1 `mcp-hub` 后，使用 `MCP_D1_ID` 保存新的 UUID；仅在确认备份、表数据与密钥无误后迁移数据。
 3. 原 `GMC_KEYRING_JSON` 对应的**值**必须原样转存为 `MCP_KEYRING_JSON`；原 RSA 私钥也必须原样转存。不要生成新密钥覆盖旧凭据。
 4. 旧 OAuth 资源 URI 不能转换成新域名的授权；客户端必须针对 `https://mcp.135468.xyz` 或 `https://mcp.135468.xyz/github` 重新授权。
-5. 只能通过 Action Worker 手动 staging 部署，中央确认 CI Evidence 与 Main Write Guard 后执行；Worker 回滚不会撤销 D1 数据迁移。
+5. 只能通过 Action Worker 手动生产部署，中央确认 CI Evidence 与 Main Write Guard 后执行；Worker 回滚不会撤销 D1 数据迁移。
 
 详细前置检查见 [MCP Hub 迁移说明](docs/MCP_HUB_MIGRATION.md)。
 

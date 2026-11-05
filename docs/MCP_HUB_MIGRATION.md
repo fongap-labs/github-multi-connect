@@ -23,7 +23,8 @@ Worker：mcp-hub
 D1：mcp-hub
 D1 绑定：MCP_DB
 D1 标识来源：MCP_D1_ID
-中央环境：mcp-hub-ops
+中央部署环境：production
+专属运维环境：mcp-hub-ops
 根入口：https://mcp.135468.xyz
 GitHub 入口：https://mcp.135468.xyz/github
 ```
@@ -98,7 +99,7 @@ Action Worker → 手动 · 部署服务
               → 固定提交 → scripts/deploy.sh
 ```
 
-在 `mcp-hub-ops` 配置五项原始运行时密钥；`CLOUDFLARE_API_TOKEN_SECONDARY` 属于中央 Secrets，`CLOUDFLARE_ACCOUNT_ID_SECONDARY` 属于中央 Variables。运行时派发还需中央策略允许可选 `MCP_RUNTIME_KEY`，并在 `mcp-hub-ops` 配置该密钥后重新部署。首次启用前缺少任一条件时保持关闭；已启用后撤销需在 Cloudflare 明确删除 Worker Secret，不能只从中央 Environment 移除，不允许凭据回退。
+Action Worker 共享 `production` 只配置 Cloudflare 部署凭据 `CLOUDFLARE_API_TOKEN_SECONDARY`；`CLOUDFLARE_ACCOUNT_ID_SECONDARY` 与业务部署参数属于普通 Variables。`mcp-hub-ops` 留给独立运维任务。五项必需业务密钥 `MCP_ADMIN_KEY`、`MCP_APPROVAL_KEY`、`MCP_COOKIE_KEY`、`MCP_KEYRING_JSON`、`MCP_INGEST_JWK` 继续作为 Cloudflare Worker Secrets；可选 `MCP_RUNTIME_KEY` 也只在 Cloudflare 设置。普通部署不传递任何业务密钥。停用某项 Worker Secret 必须由运维人员显式删除并核验，不能通过部署时省略实现。实际已配状态需运维核实，不允许凭据回退。
 
 ## 5. 切换安全
 
