@@ -155,7 +155,9 @@ export async function heartbeatRunner(request: Request, env: Env): Promise<Respo
   } catch (error) { return mapProtocolError(error); }
 }
 
-function validLeaseInput(input: { runnerId: unknown; idempotencyKey: unknown; resourceKey: unknown; ttlSeconds: unknown }): boolean {
+function validLeaseInput(
+  input: { runnerId: unknown; idempotencyKey: unknown; resourceKey: unknown; ttlSeconds: unknown }
+): input is { runnerId: string; idempotencyKey: string; resourceKey: string; ttlSeconds: number } {
   return typeof input.runnerId === 'string' && /^runner_[A-Za-z0-9_-]{43}$/.test(input.runnerId) &&
     typeof input.idempotencyKey === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(input.idempotencyKey) &&
     typeof input.resourceKey === 'string' && input.resourceKey.length >= 1 && input.resourceKey.length <= 200 &&
@@ -173,7 +175,7 @@ function leaseFromRow(row: Record<string, unknown>): RunnerLease {
 export async function acquireRunnerLease(env: Env, input: { runnerId: unknown; idempotencyKey: unknown; resourceKey: unknown; ttlSeconds: unknown }, at = now()): Promise<RunnerLease> {
   if (!validLeaseInput(input) || !Number.isSafeInteger(at)) throw new RunnerRegistryError('invalid_request');
   const leaseId = 'lease_' + randomId();
-  const expiresAt = at + (input.ttlSeconds as number);
+  const expiresAt = at + input.ttlSeconds;
   const inserted = await env.MCP_DB.prepare(`INSERT INTO runner_leases(lease_id,runner_id,idempotency_key,resource_key,acquired_at,expires_at)
     SELECT ?,r.runner_id,?,?,?,? FROM runners r
     WHERE r.runner_id=? AND r.enabled=1 AND r.registered_at IS NOT NULL AND r.observed_at IS NOT NULL AND r.expires_at>?
