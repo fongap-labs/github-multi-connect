@@ -20,6 +20,7 @@ function fixture(){
   const sql=new DatabaseSync(':memory:');
   sql.exec(readFileSync(new URL('../migrations/0001_init.sql',import.meta.url),'utf8'));
   sql.exec(readFileSync(new URL('../migrations/0002_refresh_token_rotation.sql',import.meta.url),'utf8'));
+  sql.exec(readFileSync(new URL('../migrations/0003_resource_tool_policy.sql',import.meta.url),'utf8'));
   sql.exec(readFileSync(new URL('../migrations/0003_runner_registry_leases.sql',import.meta.url),'utf8'));
   const db={prepare(query){return {bind(...params){return {
     first:async()=>sql.prepare(query).get(...params)||null,
@@ -30,8 +31,8 @@ function fixture(){
   return sql;
 }
 async function seed(sql,{refresh=true}={}){
-  sql.prepare('INSERT INTO oauth_clients(client_id,client_name,redirect_uris,grant_types,approved,allowed_owners,created_at) VALUES(?,?,?,?,?,?,?)')
-    .run(clientId,'Test OAuth Client','["http://127.0.0.1:1234/cb"]',JSON.stringify(refresh?['authorization_code','refresh_token']:['authorization_code']),1,'["acme"]',Math.floor(Date.now()/1000));
+  sql.prepare('INSERT INTO oauth_clients(client_id,client_name,redirect_uris,grant_types,approved,allowed_owners,allowed_resources,allowed_tools,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+    .run(clientId,'Test OAuth Client','["http://127.0.0.1:1234/cb"]',JSON.stringify(refresh?['authorization_code','refresh_token']:['authorization_code']),1,'["acme"]','["default"]','[]',Math.floor(Date.now()/1000));
   const code='q'.repeat(43);
   sql.prepare('INSERT INTO oauth_codes(code_hash,client_id,redirect_uri,resource,scope,code_challenge,expires_at,auth_version) VALUES(?,?,?,?,?,?,?,0)')
     .run(await sha(code),clientId,'http://127.0.0.1:1234/cb',resource,'mcp:read',await sha(verifier),Math.floor(Date.now()/1000)+90);
