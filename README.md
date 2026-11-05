@@ -77,7 +77,7 @@ MCP Hub 与 AI Gateway 共用 [Action Worker → 手动 · 部署服务](https:/
 
 当前 `/` 与 `/github` 继续映射到 GitHub 模块，且保留各自独立的 OAuth Resource；这两个兼容入口暂时提供相同 GitHub 工具。
 
-Runner v1 的身份、注册、能力、心跳和容量合同见 [Runner Protocol](docs/RUNNER_PROTOCOL.md)。当前只定义并验证合同，尚未开放 Runner API 或任务调度。
+Runner v1 的身份、注册、能力、心跳、凭据管理和有限资源租约见 [Runner Protocol](docs/RUNNER_PROTOCOL.md)。管理员可在 `/admin` 签发 Runner 凭据；Hub 不含任务派发、自动重试或全局调度。
 
 ### 本地测试
 

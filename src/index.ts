@@ -5,6 +5,7 @@ import {protectedMetadata,serverMetadata,registerClient,authorizeGet,authorizePo
 import {adminRoute} from './admin.ts';
 import {serverForPath,serverForMetadata} from './gateway/registry.ts';
 import {processMcp} from './gateway/router.ts';
+import {heartbeatRunner,registerRunner} from './control/runner-registry.ts';
 
 export default {
   async fetch(request: Request,env: Env): Promise<Response> {
@@ -21,6 +22,8 @@ export default {
       if(path==='/oauth/register'&&request.method==='POST')return registerClient(request,env);
       if(path==='/oauth/token'&&request.method==='POST')return tokenEndpoint(request,env);
       if(path==='/oauth/revoke'&&request.method==='POST')return revokeToken(request,env);
+      if(path==='/runner/register'&&request.method==='POST')return registerRunner(request,env);
+      if(path==='/runner/heartbeat'&&request.method==='POST')return heartbeatRunner(request,env);
       if(path==='/authorize')return request.method==='GET'?authorizeGet(request,env):request.method==='POST'?authorizePost(request,env):json({error:'Method not allowed'},405);
       if(path.startsWith('/admin'))return adminRoute(request,env);
       const mcpServer=serverForPath(path);

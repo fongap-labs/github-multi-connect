@@ -36,8 +36,8 @@ export interface RunnerCapacity {
   readonly maxConcurrency: number;
   readonly activeConcurrency: number;
   readonly availability: RunnerAvailability;
-  readonly observedAt: string;
-  readonly expiresAt: string;
+  readonly observedAt: string | null;
+  readonly expiresAt: string | null;
 }
 
 export type RunnerProtocolErrorCode =

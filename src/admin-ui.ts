@@ -67,4 +67,15 @@ const COPY=${JSON.stringify(ADMIN_BROWSER_COPY)};
     try{const out=await api('/admin/api/rekey',{});result.textContent=COPY.rekeyPrefix+out.processed+COPY.rekeyInfix+out.remaining+COPY.rekeySuffix}
     catch(e){result.textContent=e.message}
   });
+  document.getElementById('runner-add').addEventListener('submit',async ev=>{
+    ev.preventDefault();const f=ev.currentTarget;const btn=f.querySelector('button');btn.disabled=true;
+    try{const out=await api('/admin/api/runners/provision',{displayName:f.elements.displayName.value.trim(),capabilities:f.elements.capabilities.value.split(',').map(x=>x.trim()).filter(Boolean),maxConcurrency:Number(f.elements.maxConcurrency.value)});
+      result.textContent='Runner ID: '+out.runnerId+'\\n凭据（仅显示这一次，请安全保存）: '+out.token+'\\n保存后刷新页面查看 Runner 状态。';f.reset();
+    }catch(e){result.textContent=e.message}finally{btn.disabled=false}
+  });
+  document.querySelectorAll('.revoke-runner').forEach(b=>b.addEventListener('click',async()=>{
+    if(!confirm('撤销 Runner '+b.dataset.runner+'？这会停用其凭据并释放 Hub 租约。'))return;
+    try{await api('/admin/api/runners/revoke',{runnerId:b.dataset.runner});location.reload()}
+    catch(e){result.textContent=e.message}
+  }));
 })();`;
