@@ -20,6 +20,8 @@ export interface DbRow {
   approved: number;
   allowed_owners: string;
   allow_write: number;
+  allowed_resources: string;
+  allowed_tools: string;
   grant_types: string;
   grant_id: string | null;
   resource: string;
@@ -83,6 +85,8 @@ export interface McpAuth {
   clientId: string;
   scopes: string[];
   allowedOwners: string[];
+  allowedResources: string[];
+  allowedTools: string[];
 }
 export interface AdminSession {
   exp: number;

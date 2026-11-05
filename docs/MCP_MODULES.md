@@ -18,4 +18,12 @@ GitHub 模块目前声明两个入口：`/` 和 `/github`。两个入口继续�
 
 `src/mcp.ts` 和 `src/mcp-registry.ts` 保留为旧导入路径的兼容层。新代码应直接导入 `src/gateway/`。
 
-服务模块的注册只提供结构隔离，不代表完成服务级或工具级授权策略。模块必须遵守收到的 OAuth scopes 与客户端授权；更细的 Resource、Client、Tool 和操作策略由独立权限工作项定义。
+## Resource 与工具授权
+
+`oauth_clients.allowed_resources` 保存获批的入口 ID，`allowed_tools` 保存 URL 编码后的 `模块 ID:工具名`。新注册的 OAuth 客户端两个列表都为空，管理员必须在 `/admin` 明确选择至少一个 Resource 和一个工具。OAuth 授权端点与 MCP 网关都会检查这些策略；工具发现和调用共用同一白名单。
+
+Resource 与工具权限按交集生效：Resource 获批不代表该模块的所有工具都获批，工具获批也不能越过入口的 Resource 限制。同一模块下的多个入口共享工具名单，但每个入口仍需单独授权。
+
+GitHub 模块的 owner 限制和写入开关继续作为额外约束。授权修改会吊销客户端现有令牌并递增 `auth_version`，避免旧 Access Token 或 Refresh Token 保留过期权限。
+
+迁移会为已有获批客户端填入当前 GitHub Resource 与现有工具列表，以免此次升级切断其现有访问。之后新增的工具不会自动进入这些旧白名单；管理员需逐个授权。管理界面读取模块声明生成 Resource 和工具选项，注册新模块不需要改一份中央静态授权清单。

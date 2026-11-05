@@ -62,6 +62,11 @@ export function resourceForServer(env: Env, server: McpServer): string {
   return baseOrigin(env) + server.resourcePath;
 }
 
+/** Stable client policy key for a tool owned by a registered MCP module. */
+export function toolPolicyId(moduleId: string, toolName: string): string {
+  return `${encodeURIComponent(moduleId)}:${encodeURIComponent(toolName)}`;
+}
+
 export function serverForPath(path: string): McpServer | undefined {
   return MCP_SERVERS.find(server => server.path === path);
 }

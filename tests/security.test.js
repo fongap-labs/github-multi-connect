@@ -63,7 +63,7 @@ test('Github token strings are redacted from tool JSON output',()=>{
 test('MCP refuses tool operations on unapproved owner, even when a client has read scope',async()=>{
   const req=new Request('https://mcp.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'github_get_repository',arguments:{owner:'other-org',repo:'private'}}})});
   const env={MCP_DB:{prepare(){throw new Error('DB must not be touched for unapproved owner');}}};
-  const result=await processMcp(req,env,{scopes:['mcp:read'],allowedOwners:['acme']},MCP_SERVERS[0]);
+  const result=await processMcp(req,env,{scopes:['mcp:read'],allowedOwners:['acme'],allowedResources:['default'],allowedTools:['github:github_get_repository']},MCP_SERVERS[0]);
   const body=await result.json();assert.equal(body.result.isError,true);assert.match(body.result.content[0].text,/not authorized/);
 });
 

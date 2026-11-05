@@ -1,35 +1,124 @@
-# MCP Hub migration and deployment safety
+# 服务迁移与部署安全
 
-## Target identities
+## 1. 目标身份
 
-- Repository: `fongap-labs/mcp-hub` (renamed from `fongap-labs/github-multi-connect`).
-- Cloudflare Worker: `mcp-hub`; Custom Domain: `mcp.135468.xyz`.
-- Cloudflare D1: physical name `mcp-hub`, application binding `MCP_DB`, UUID in `MCP_D1_ID`.
-- Root MCP: `https://mcp.135468.xyz`; GitHub MCP: `https://mcp.135468.xyz/github`.
-- Shared administration and OAuth: `/admin`, `/authorize`, `/oauth/*`, `/.well-known/*`.
-- Platform config and Secrets use `MCP_*`; GitHub-only switches retain `GMC_WRITE_MODE` and `GMC_CONTENT_MODE`.
-- Staging Environment: `mcp-hub-ops` in the **Action Worker** GitHub repository.
+仓库、服务与数据库必须分别确认。
 
-## D1 is a separate data resource
+### ❌ 错误做法 / 反面教材
 
-Renaming a GitHub repository does not rename D1, Workers, GitHub Environments or Cloudflare Custom Domains. D1 database identity cannot be changed simply by writing another name next to its existing UUID.
+以仓库改名代替云资源迁移。
 
-**For a new, unused installation:** create a `mcp-hub` D1 database in the intended SECONDARY Cloudflare account. Save the actual UUID as `MCP_D1_ID`; apply only the checked-in migrations.
+```text
+重命名 GitHub 仓库 → 假定数据库也已改名
+```
 
-**If an existing D1 may contain GitHub Token ciphertext or OAuth records:**
+### ✅ 正确做法 / 规范范例
 
-1. Freeze credential writes and export/backup the existing `github-multi-connect` database before any migration. Keep it and its original ID unchanged.
-2. Create a separate `mcp-hub` database. Verify table structure and migrate/export-import records into this new database with an audited, encrypted transfer. Do not point a new database name at an old UUID without checking the actual resource.
-3. Preserve the actual values of AES keyring (`GMC_KEYRING_JSON` → `MCP_KEYRING_JSON`) and browser private JWK (`GMC_INGEST_JWK` → `MCP_INGEST_JWK`). Renaming the environment variable must not change its secret material.
-4. Compare row counts and decrypt a known test connection before switching traffic. Do not delete the source database until a reviewed retention and recovery period ends.
-5. Old OAuth grants, Access Tokens and Refresh Tokens contain the old URL as `resource`; they must **not** silently inherit permission to the new origin. Require fresh client authorization at each new resource URI.
+逐项核验实际标识。
 
-## Action Worker central deployment
+```text
+仓库：fongap-labs/mcp-hub
+Worker：mcp-hub
+域名：mcp.135468.xyz
+D1：mcp-hub
+D1 绑定：MCP_DB
+D1 标识来源：MCP_D1_ID
+中央环境：mcp-hub-ops
+根入口：https://mcp.135468.xyz
+GitHub 入口：https://mcp.135468.xyz/github
+```
 
-MCP Hub is deployed only by the **same Action Worker source-script workflow as AI Gateway**, through [手动 · 部署服务](https://github.com/fongap-labs/action-worker/actions/workflows/deploy-source-script.yml). There is no independent MCP Hub deploy workflow. Action Worker validates the current main SHA, signed CI Evidence, Main Write Guard and central environment/runner policies before checking out and running the reviewed source script.
+共用管理与授权路径为 `/admin`、`/authorize`、`/oauth/*`、`/.well-known/*`。平台配置采用 `MCP_*`；GitHub 专属开关保留 `GMC_WRITE_MODE` 和 `GMC_CONTENT_MODE`。
 
-Source-repository Environment Secrets cannot be read by an Action Worker job. Configure the same original AES keyring/JWK and three other runtime Secrets as **Action Worker** Environment Secrets in `mcp-hub-ops`. Keep an offline backup. The `CLOUDFLARE_API_TOKEN_SECONDARY` stays in Action Worker Secrets and `CLOUDFLARE_ACCOUNT_ID_SECONDARY` stays in Action Worker Variables; no fallback token and no credential values in source control. Central Secret policy currently allows exactly six required Secrets; Runtime dispatch stays disabled until its optional `MCP_RUNTIME_KEY` is explicitly added to the Action Worker MCP Hub allowlist and filtered to the Worker secret file.
+## 2. 数据库隔离
 
-Check that `AW_REPOSITORY_POLICY` enables `fongap-labs/mcp-hub` and that `policies/deploy-environments.json` and `policies/deploy-secrets.json` approve only the intended staging scope. Do not deploy until `135468.xyz` is in the correct Cloudflare account, D1 backup/migration is verified, and no conflicting DNS record exists. Keep `workers_dev: false` and `preview_urls: false`. Worker rollback does not undo D1 schema/data migration.
+禁止把新名称直接绑定旧数据库标识。
 
-This change does not mutate Cloudflare databases, import secrets or deploy the Worker.
+### ❌ 错误做法 / 反面教材
+
+不检查密文数据就直接切换。
+
+```text
+新 D1 名称 + 旧 UUID → 视为迁移成功
+```
+
+### ✅ 正确做法 / 规范范例
+
+先审计资源，再转移和核对。
+
+```text
+冻结旧库凭据写入 → 导出备份 → 创建新 D1
+                  → 审计加密迁移 → 核对行数与解密 → 切流
+```
+
+新安装仅需创建目标 D1 并执行版本控制内的迁移。已有密文时，保留原始 AES 密钥环及浏览器 JWK 材料；`GMC_KEYRING_JSON` 改名为 `MCP_KEYRING_JSON`、`GMC_INGEST_JWK` 改名为 `MCP_INGEST_JWK`，**不得重新生成密钥**。源数据库须保留至审查后的恢复期结束。
+
+## 3. 重新授权
+
+新的授权资源必须重新取得许可。
+
+### ❌ 错误做法 / 反面教材
+
+沿用旧域名的授权记录。
+
+```text
+旧 resource → 静默授予新域名
+```
+
+### ✅ 正确做法 / 规范范例
+
+按目标资源重新执行客户端授权。
+
+```text
+新资源 URI → 新的客户端授权 → 受限工具访问
+```
+
+旧 OAuth 授权码、访问令牌与刷新令牌不得自动继承新 URI 权限。
+
+## 4. 中央部署
+
+部署只使用 Action Worker。
+
+### ❌ 错误做法 / 反面教材
+
+从业务仓库密钥直接发布 Worker。
+
+```text
+mcp-hub 自有部署流程 → 直接生产环境
+```
+
+### ✅ 正确做法 / 规范范例
+
+从中央入口申请授权。
+
+```text
+Action Worker → 手动 · 部署服务
+              → 主分支来源证明
+              → CI Evidence + 审批 + 环境权限
+              → 固定提交 → scripts/deploy.sh
+```
+
+在 `mcp-hub-ops` 配置五项原始运行时密钥；`CLOUDFLARE_API_TOKEN_SECONDARY` 属于中央 Secrets，`CLOUDFLARE_ACCOUNT_ID_SECONDARY` 属于中央 Variables。中央秘密策略当前批准六项必需的部署 Secret，不允许凭据回退。运行时派发必须在中央白名单明确允许可选 `MCP_RUNTIME_KEY`、并确认密钥可安全下发后才能启用，否则保持关闭。
+
+## 5. 切换安全
+
+未完成验证不得切换流量。
+
+### ❌ 错误做法 / 反面教材
+
+DNS、数据库与密钥状态未知时立即部署。
+
+```text
+未知 DNS + 未验证 D1 + 过期凭据 → 部署
+```
+
+### ✅ 正确做法 / 规范范例
+
+确认全部前置条件。
+
+```text
+正确 Cloudflare 账户 → 域名无冲突 → 数据备份校验
+                      → 中央部署 → 健康验证 → 切流
+```
+
+`workers_dev: false`、`preview_urls: false` 必须保持。Worker 回滚不回滚 D1 迁移。本文不执行数据库、密钥或云资源变更。
