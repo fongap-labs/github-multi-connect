@@ -26,7 +26,12 @@ export interface RunnerQuotaReport {
 export type RuntimeDispatchState = 'not_started' | 'running' | 'side_effects_uncertain' | 'completed' | 'cancelled' | 'failed';
 
 export class DispatchProtocolError extends Error {
-  constructor(readonly code: string) { super(code); this.name = 'DispatchProtocolError'; }
+  readonly code: string;
+  constructor(code: string) {
+    super(code);
+    this.code = code;
+    this.name = 'DispatchProtocolError';
+  }
 }
 
 function object(value: unknown): Record<string, unknown> {
