@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {loadDeployConfig,buildWranglerConfig,verifyDeployment,SECRET_NAMES} from '../scripts/deployment-config.mjs';
-import {prepareWorkerSecrets} from '../scripts/prepare-worker-secrets.mjs';
 const sha='a'.repeat(40);
 function env(overrides={}){return {
   CLOUDFLARE_ACCOUNT_ID_SECONDARY:'b'.repeat(32),
@@ -13,7 +12,7 @@ function env(overrides={}){return {
   GMC_CONTENT_MODE:'disabled',
   MCP_OAUTH_TTL:'900',
   DEPLOY_SOURCE_SHA:sha,
-  DEPLOY_ENVIRONMENT:'mcp-hub-ops', ...overrides};}
+  DEPLOY_ENVIRONMENT:'production', ...overrides};}
 test('Generates exact approved MCP Hub bindings, no credentials or runtime secrets in config',()=>{
  const cfg=buildWranglerConfig(loadDeployConfig(env()));
  assert.equal(cfg.d1_databases[0].database_name,'mcp-hub');
@@ -31,7 +30,7 @@ test('Generates exact approved MCP Hub bindings, no credentials or runtime secre
  assert.equal(Object.keys(cfg.vars).length,6);
 });
 test('rejects invalid or incomplete deployment configurations',()=>{
- for(const x of [{MCP_D1_ID:''},{MCP_PUBLIC_URL:'http://mcp.135468.xyz'},{MCP_PUBLIC_URL:'https://mcp.example.workers.dev'},{MCP_PUBLIC_URL:'https://gmc.135468.xyz/mcp'},{GMC_WRITE_MODE:'true'},{GMC_CONTENT_MODE:'true'},{MCP_OAUTH_TTL:'120'},{MCP_ACTIVE_ID:''},{DEPLOY_SOURCE_SHA:'main'},{DEPLOY_ENVIRONMENT:'mcp-hub'},{DEPLOY_ENVIRONMENT:'mcp-hub-staging'},{DEPLOY_ENVIRONMENT:'production'},{CLOUDFLARE_API_TOKEN_SECONDARY:''}]){
+ for(const x of [{MCP_D1_ID:''},{MCP_PUBLIC_URL:'http://mcp.135468.xyz'},{MCP_PUBLIC_URL:'https://mcp.example.workers.dev'},{MCP_PUBLIC_URL:'https://gmc.135468.xyz/mcp'},{GMC_WRITE_MODE:'true'},{GMC_CONTENT_MODE:'true'},{MCP_OAUTH_TTL:'120'},{MCP_ACTIVE_ID:''},{DEPLOY_SOURCE_SHA:'main'},{DEPLOY_ENVIRONMENT:'mcp-hub'},{DEPLOY_ENVIRONMENT:'mcp-hub-staging'},{DEPLOY_ENVIRONMENT:'mcp-hub-ops'},{CLOUDFLARE_API_TOKEN_SECONDARY:''}]){
    assert.throws(()=>loadDeployConfig(env(x)));
  }
 });
@@ -66,53 +65,75 @@ test('central entrypoint rejects source-owned independent deployment before Clou
   const {spawnSync}=await import('node:child_process');
   const script=new URL('../scripts/deploy.sh',import.meta.url);
   const vars={...process.env,RUNNER_TEMP:'/tmp',DEPLOY_SOURCE_SHA:sha,
-    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'mcp-hub-ops',
+    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'production',
     GITHUB_REPOSITORY:'fongap-labs/mcp-hub'};
   const r=spawnSync('bash',[script.pathname],{env:vars,encoding:'utf8'});
   assert.equal(r.status,77);
   assert.match(r.stderr,/Action Worker control plane/);
   assert.doesNotMatch(r.stdout+r.stderr,/wrangler deploy|migrations apply/);
 });
-test('central entrypoint rejects missing runtime Secrets before npm or Cloudflare',async()=>{
+test('central entrypoint requires Cloudflare credentials, not runtime secrets',async()=>{
   if(process.platform==='win32')return;
   const {spawnSync}=await import('node:child_process');
   const script=new URL('../scripts/deploy.sh',import.meta.url);
   const vars={...process.env,RUNNER_TEMP:'/tmp',DEPLOY_SOURCE_SHA:sha,
-    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'mcp-hub-ops',
+    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'production',
     GITHUB_REPOSITORY:'fongap-labs/action-worker'};
   for(const name of ['CLOUDFLARE_API_TOKEN_SECONDARY','MCP_ADMIN_KEY','MCP_APPROVAL_KEY',
-    'MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK'])delete vars[name];
+    'MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK','MCP_RUNTIME_KEY'])delete vars[name];
   const r=spawnSync('bash',[script.pathname],{env:vars,encoding:'utf8'});
   assert.equal(r.status,77);
-  assert.match(r.stderr,/Required Action Worker deployment Secret is unavailable/);
+  assert.match(r.stderr,/Required Cloudflare deployment credential is unavailable/);
   assert.doesNotMatch(r.stdout+r.stderr,/npm install|wrangler deploy|migrations apply/);
 });
-test('central deploy strips runtime Secrets from npm child processes',async()=>{
+test('central entrypoint rejects any inherited runtime secret before deployment',async()=>{
+  if(process.platform==='win32')return;
+  const {spawnSync}=await import('node:child_process');
+  const script=new URL('../scripts/deploy.sh',import.meta.url);
+  const vars={...process.env,RUNNER_TEMP:'/tmp',DEPLOY_SOURCE_SHA:sha,
+    DEPLOY_SOURCE_REPOSITORY:'fongap-labs/mcp-hub',DEPLOY_ENVIRONMENT:'production',
+    GITHUB_REPOSITORY:'fongap-labs/action-worker',
+    CLOUDFLARE_API_TOKEN_SECONDARY:'synthetic-credential'};
+  for(const name of ['MCP_ADMIN_KEY','MCP_APPROVAL_KEY','MCP_COOKIE_KEY',
+    'MCP_KEYRING_JSON','MCP_INGEST_JWK','MCP_RUNTIME_KEY'])delete vars[name];
+  for(const name of ['MCP_ADMIN_KEY','MCP_APPROVAL_KEY','MCP_COOKIE_KEY',
+    'MCP_KEYRING_JSON','MCP_INGEST_JWK','MCP_RUNTIME_KEY']){
+    const r=spawnSync('bash',[script.pathname],{env:{...vars,[name]:'synthetic-secret'},encoding:'utf8'});
+    assert.equal(r.status,77,name);
+    assert.match(r.stderr,/Worker runtime Secret must not be passed to deployment/,name);
+    assert.doesNotMatch(r.stdout+r.stderr,/npm install|wrangler deploy|migrations apply/,name);
+  }
+});
+test('source manifest and deployment scripts do not transfer runtime secrets',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const required=readFileSync(new URL('../.github/deploy.secrets.required',import.meta.url),'utf8');
+  const allowed=readFileSync(new URL('../.github/deploy.secrets.allowed',import.meta.url),'utf8');
+  assert.deepEqual(required.trim().split(/\r?\n/),['CLOUDFLARE_API_TOKEN_SECONDARY']);
+  assert.doesNotMatch(allowed,/^MCP_[A-Z_]+$/m);
+  const manifest=JSON.parse(readFileSync(new URL('../.github/deploy.json',import.meta.url),'utf8'));
+  assert.deepEqual(Object.keys(manifest.environments),['production']);
+  const script=readFileSync(new URL('../scripts/deploy.sh',import.meta.url),'utf8');
+  assert.doesNotMatch(script,/--secrets-file|prepare-worker-secrets|worker-secrets\.json/);
+  assert.match(script,/wrangler deploy --config "\$config"/);
+  const pkg=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'));
+  assert.doesNotMatch(pkg.scripts['cf:deploy'],/--secrets-file/);
+  const config=buildWranglerConfig(loadDeployConfig(env()));
+  for(const name of SECRET_NAMES)assert.equal(Object.hasOwn(config.vars,name),false);
+  const types=readFileSync(new URL('../src/types.ts',import.meta.url),'utf8');
+  for(const name of SECRET_NAMES)assert.match(types,new RegExp(name+'\\??: string'));
+  const runtime=readFileSync(new URL('../src/control/dispatch.ts',import.meta.url),'utf8');
+  assert.match(runtime,/env\.MCP_RUNTIME_KEY/);
+  assert.match(runtime,/runtimeAuth\(request, env\)/);
+});
+test('central deploy removes credentials from npm child processes',async()=>{
   const {readFileSync}=await import('node:fs');
   const script=readFileSync(new URL('../scripts/deploy.sh',import.meta.url),'utf8');
   assert.match(script,/safe_env=\(env\)/);
   assert.match(script,/npm install --ignore-scripts/);
   assert.match(script,/npm run validate/);
-  for(const n of ['MCP_ADMIN_KEY','MCP_APPROVAL_KEY','MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK'])
-    assert.match(script,new RegExp(n));
-});
-
-test('central deploy declares the runtime key as optional and writes it only when configured',async()=>{
-  const {readFileSync}=await import('node:fs');
-  const {resolve}=await import('node:path');
-  const required=readFileSync(new URL('../.github/deploy.secrets.required',import.meta.url),'utf8');
-  const allowed=readFileSync(new URL('../.github/deploy.secrets.allowed',import.meta.url),'utf8');
-  assert.doesNotMatch(required,/^MCP_RUNTIME_KEY$/m);
-  assert.match(allowed,/^MCP_RUNTIME_KEY$/m);
-  const secrets={MCP_ADMIN_KEY:'admin',MCP_APPROVAL_KEY:'approval',MCP_COOKIE_KEY:'cookie',
-    MCP_KEYRING_JSON:'keyring',MCP_INGEST_JWK:'jwk'};
-  let file='';
-  const writer=(_path,body)=>{file=body;};
-  assert.equal(prepareWorkerSecrets(secrets,resolve('worker-secrets.json'),writer),5);
-  assert.equal(Object.hasOwn(JSON.parse(file),'MCP_RUNTIME_KEY'),false);
-  assert.equal(prepareWorkerSecrets({...secrets,MCP_RUNTIME_KEY:'x'.repeat(32)},resolve('worker-secrets.json'),writer),6);
-  assert.equal(JSON.parse(file).MCP_RUNTIME_KEY,'x'.repeat(32));
-  assert.throws(()=>prepareWorkerSecrets({...secrets,MCP_RUNTIME_KEY:'short'},resolve('worker-secrets.json'),writer),/at least 32/);
+  for(const name of ['CLOUDFLARE_API_TOKEN_SECONDARY','MCP_ADMIN_KEY','MCP_APPROVAL_KEY',
+    'MCP_COOKIE_KEY','MCP_KEYRING_JSON','MCP_INGEST_JWK','MCP_RUNTIME_KEY'])
+    assert.match(script,new RegExp(name));
 });
 
 test('central deploy uses supported Wrangler D1 remote migration arguments',async()=>{

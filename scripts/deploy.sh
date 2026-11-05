@@ -14,22 +14,23 @@ if [[ "${GITHUB_REPOSITORY:-}" != "fongap-labs/action-worker" || "${DEPLOY_SOURC
   echo '::error::Deployments must be executed by the Action Worker control plane for MCP Hub.' >&2
   exit 77
 fi
-if [[ ! "$DEPLOY_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$DEPLOY_ENVIRONMENT" != "mcp-hub-ops" ]]; then
-  echo '::error::Deployment requires immutable source SHA and approved staging environment.' >&2
+if [[ ! "$DEPLOY_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$DEPLOY_ENVIRONMENT" != "production" ]]; then
+  echo '::error::Deployment requires immutable source SHA and approved production environment.' >&2
   exit 65
 fi
-for required in CLOUDFLARE_API_TOKEN_SECONDARY MCP_ADMIN_KEY MCP_APPROVAL_KEY MCP_COOKIE_KEY MCP_KEYRING_JSON MCP_INGEST_JWK; do
-  if [[ -z "${!required:-}" ]]; then
-    echo "::error::Required Action Worker deployment Secret is unavailable: $required." >&2
+if [[ -z "${CLOUDFLARE_API_TOKEN_SECONDARY:-}" ]]; then
+  echo '::error::Required Cloudflare deployment credential is unavailable.' >&2
+  exit 77
+fi
+# Runtime Worker Secrets stay in Cloudflare. Fail closed if credentials from another
+# environment were inadvertently inherited by the deployment job.
+for name in MCP_ADMIN_KEY MCP_APPROVAL_KEY MCP_COOKIE_KEY MCP_KEYRING_JSON MCP_INGEST_JWK MCP_RUNTIME_KEY; do
+  if [[ -n "${!name:-}" ]]; then
+    echo "::error::Worker runtime Secret must not be passed to deployment: $name." >&2
     exit 77
   fi
 done
-if [[ -n "${MCP_RUNTIME_KEY:-}" && ${#MCP_RUNTIME_KEY} -lt 32 ]]; then
-  echo '::error::MCP_RUNTIME_KEY must contain at least 32 characters.' >&2
-  exit 65
-fi
-
-# Secrets are stripped from npm install/test subprocesses; only Wrangler receives them.
+# Keep deployment credentials and inherited runtime credentials out of tests.
 safe_env=(env)
 for name in CLOUDFLARE_API_TOKEN_SECONDARY MCP_ADMIN_KEY MCP_APPROVAL_KEY MCP_COOKIE_KEY MCP_KEYRING_JSON MCP_INGEST_JWK MCP_RUNTIME_KEY; do
   safe_env+=("-u" "$name")
@@ -43,18 +44,17 @@ trap cleanup EXIT
 config="$work/wrangler.jsonc"
 
 if [[ ! -f node_modules/wrangler/bin/wrangler.js ]]; then
-  echo '::error::Dependencies must be installed and validated before the secret-bearing deploy step.' >&2
+  echo '::error::Dependencies must be installed and validated before the Cloudflare deploy step.' >&2
   exit 77
 fi
 node scripts/deployment-config.mjs preflight
 node scripts/deployment-config.mjs prepare "$config"
-node scripts/prepare-worker-secrets.mjs "$work/worker-secrets.json"
 
 wrangler() { node scripts/with-secondary-cloudflare.mjs "$@"; }
 wrangler deploy --dry-run --outdir "$work/build" --config "$config"
 # D1 migrations are additive and NOT reverted by a Worker rollback.
 wrangler d1 migrations apply mcp-hub --remote --config "$config"
-wrangler deploy --secrets-file "$work/worker-secrets.json" --config "$config"
+wrangler deploy --config "$config"
 
 healthy=false
 for attempt in 1 2 3; do

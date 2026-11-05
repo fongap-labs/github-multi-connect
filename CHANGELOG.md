@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: MCP Hub 共享 production 部署环境，运行时业务密钥留在 Cloudflare Worker Secrets，不再从中央部署转交。
+
 - 新增: 声明可选的 Runtime 派发密钥供中央部署安全下发。
 - 新增: 定义 Runner Protocol v1，统一注册、心跳与容量快照的数据合同。
 - 新增: 增加 Runner Registry 与有界租约，支持凭据撤销、容量认领和幂等租约管理。

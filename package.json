@@ -13,7 +13,7 @@
     "check": "npm run typecheck",
     "cf:db:create": "node scripts/with-secondary-cloudflare.mjs d1 create mcp-hub",
     "cf:migrate": "node scripts/with-secondary-cloudflare.mjs d1 migrations apply mcp-hub --remote",
-    "cf:deploy": "node scripts/with-secondary-cloudflare.mjs deploy --secrets-file .secrets.json",
+    "cf:deploy": "node scripts/with-secondary-cloudflare.mjs deploy",
     "cf:secrets": "node scripts/with-secondary-cloudflare.mjs secret bulk .secrets.json",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "validate": "npm run check && npm test",
