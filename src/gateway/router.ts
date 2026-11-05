@@ -4,6 +4,7 @@ import { McpPublicError } from './errors.ts';
 import { redact } from './redaction.ts';
 import { BRAND_NAME, BRAND_SOURCE, BRAND_VERSION } from '../brand.ts';
 import { json } from '../util.ts';
+import { toolPolicyId } from './registry.ts';
 
 type RpcId = string | number | null;
 
@@ -44,6 +45,7 @@ export async function processMcp(request: Request, env: Env, auth: McpAuth, serv
   if (id !== undefined && typeof id !== 'number' && typeof id !== 'string') return json(rpcError(null, -32600, 'Invalid request'));
   if (id === undefined) return new Response(null, { status: 202, headers: { 'Cache-Control': 'no-store' } });
   if (!auth.scopes.includes('mcp:read')) return json(rpcError(id, -32001, 'Insufficient scope'), 403);
+  if (!auth.allowedResources.includes(server.id)) return json(rpcError(id, -32001, 'Resource is not authorized'), 403);
 
   if (rpc.method === 'initialize') {
     const params = rpc.params && typeof rpc.params === 'object' && !Array.isArray(rpc.params) ? rpc.params as DataObject : {};
@@ -58,12 +60,12 @@ export async function processMcp(request: Request, env: Env, auth: McpAuth, serv
     }));
   }
   if (rpc.method === 'ping') return json(rpcResult(id, {}));
-  if (rpc.method === 'tools/list') return json(rpcResult(id, { tools: server.module.listTools(env, auth) }));
+  const allowedTools = server.module.listTools(env, auth).filter(tool => auth.allowedTools.includes(toolPolicyId(server.module.id, tool.name)));
+  if (rpc.method === 'tools/list') return json(rpcResult(id, { tools: allowedTools }));
   if (rpc.method === 'tools/call') {
-    const tools = server.module.listTools(env, auth);
     const params = rpc.params && typeof rpc.params === 'object' && !Array.isArray(rpc.params) ? rpc.params as DataObject : {};
     const name = params.name;
-    if (typeof name !== 'string' || !tools.some(tool => tool.name === name)) return json(rpcError(id, -32602, 'Unknown or unauthorized tool'));
+    if (typeof name !== 'string' || !allowedTools.some(tool => tool.name === name)) return json(rpcError(id, -32602, 'Unknown or unauthorized tool'));
     const args = params.arguments || {};
     try {
       if (!args || typeof args !== 'object' || Array.isArray(args)) throw new McpPublicError('Invalid arguments');

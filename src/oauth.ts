@@ -12,6 +12,12 @@ const b64urlRe=/^[A-Za-z0-9_-]{43}$/;
 const sanitizeName=(s: unknown)=>typeof s==='string' ? s.slice(0,100) : '';
 const oauthError=(error: string,status=400)=>json({error},status);
 export function resource(env: Env, server: McpServer): string { return resourceForServer(env,server); }
+function policyList(value: unknown): string[] {
+  try {
+    const parsed=JSON.parse(String(value));
+    return Array.isArray(parsed)?parsed.filter((item):item is string=>typeof item==='string'):[];
+  } catch { return []; }
+}
 export function protectedMetadata(env: Env, server: McpServer) {return json({resource:resource(env,server),authorization_servers:[baseOrigin(env)],scopes_supported:['mcp:read']});}
 export function serverMetadata(env: Env) {const base=baseOrigin(env);return json({issuer:base,authorization_endpoint:base+'/authorize',token_endpoint:base+'/oauth/token',registration_endpoint:base+'/oauth/register',revocation_endpoint:base+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],token_endpoint_auth_methods_supported:['none'],code_challenge_methods_supported:['S256'],scopes_supported:SCOPES});}
 export function challenge(env: Env, server: McpServer) {return json({error:'Authentication required'},401,{'WWW-Authenticate':'Bearer resource_metadata="'+baseOrigin(env)+server.metadataPath+'", scope="mcp:read"'});}
@@ -51,15 +57,21 @@ export async function authorizeGet(request: Request,env: Env): Promise<Response>
   if(!(await rateLimit(env,request,'oauth-authorize',60)))return errorPage();
   const u=new URL(request.url);const p=u.searchParams;
   const clientId=p.get('client_id')||'';const redirectUri=p.get('redirect_uri')||'';
-  const client=await env.MCP_DB.prepare('SELECT client_name,redirect_uris,approved,allowed_owners,allow_write,auth_version FROM oauth_clients WHERE client_id=?').bind(clientId).first();
+  const client=await env.MCP_DB.prepare('SELECT client_name,redirect_uris,approved,allowed_owners,allow_write,allowed_resources,allowed_tools,auth_version FROM oauth_clients WHERE client_id=?').bind(clientId).first();
   if(!client||!client.approved|| !JSON.parse(client.redirect_uris).includes(redirectUri) || !validRedirect(redirectUri)) return errorPage();
   const state=p.get('state')||'';const codeChallenge=p.get('code_challenge')||'';
   const asked=(p.get('scope')||'mcp:read').trim().split(/\s+/);
-  if(p.get('response_type')!=='code'||state.length>1024||!b64urlRe.test(codeChallenge)||p.get('code_challenge_method')!=='S256'||!asked.includes('mcp:read')||asked.some(s=>!SCOPES.includes(s))||!serverForResource(env,p.get('resource'))) return errorPage();
   const requestedResource=p.get('resource') ?? '';
+  const server=serverForResource(env,requestedResource);
+  if(p.get('response_type')!=='code'||state.length>1024||!b64urlRe.test(codeChallenge)||p.get('code_challenge_method')!=='S256'||!asked.includes('mcp:read')||asked.some(s=>!SCOPES.includes(s))||!server||!policyList(client.allowed_resources).includes(server.id)) return errorPage();
   const bind=randomId(), id=randomId();
   await env.MCP_DB.prepare('INSERT INTO oauth_auth_requests(id_hash,cookie_hash,client_id,redirect_uri,resource,scope,state,code_challenge,expires_at,auth_version) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(await sha(id),await sha(bind),clientId,redirectUri,requestedResource,asked.join(' '),state,codeChallenge,now()+600,client.auth_version).run();
-  const body=renderOAuthForm({escapeHtml,client,redirectUri,allowedOwners:JSON.parse(client.allowed_owners),id,allowWrite:asked.includes('mcp:write')});
+  const toolPrefix=encodeURIComponent(server.module.id)+':';
+  const grantedTools=policyList(client.allowed_tools).flatMap(tool=>{
+    if(!tool.startsWith(toolPrefix))return [];
+    try{return [decodeURIComponent(tool.slice(toolPrefix.length))];}catch{return [];}
+  });
+  const body=renderOAuthForm({escapeHtml,client,redirectUri,allowedOwners:JSON.parse(client.allowed_owners),id,allowWrite:asked.includes('mcp:write'),server,grantedTools});
   return html(page(OAUTH_TITLE,body),200,{'Set-Cookie':`${BIND}=${bind}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`});
 }
 export async function authorizePost(request: Request,env: Env): Promise<Response> {
@@ -106,15 +118,16 @@ export async function validateMcpToken(request: Request,env: Env,server: McpServ
   const value=request.headers.get('Authorization')||'';
   const matched=/^Bearer ([A-Za-z0-9_-]{43})$/.exec(value);if(!matched)return null;
   const row=await env.MCP_DB.prepare(`SELECT t.client_id,t.resource,t.scope,t.expires_at,t.grant_id,t.auth_version AS token_auth_version,
-    c.approved,c.allowed_owners,c.allow_write,c.auth_version AS client_auth_version,g.revoked_at AS grant_revoked_at,g.absolute_expires_at,g.scope AS grant_scope
+    c.approved,c.allowed_owners,c.allow_write,c.allowed_resources,c.allowed_tools,c.auth_version AS client_auth_version,g.revoked_at AS grant_revoked_at,g.absolute_expires_at,g.scope AS grant_scope
     FROM oauth_access_tokens t JOIN oauth_clients c ON t.client_id=c.client_id
     LEFT JOIN oauth_grants g ON t.grant_id=g.grant_id WHERE t.token_hash=?`)
     .bind(await sha(matched[1] ?? '')).first();
   if(!row||!row.approved||row.token_auth_version!==row.client_auth_version||row.expires_at<=now()||row.resource!==resource(env,server)||
+    !policyList(row.allowed_resources).includes(server.id)||
     (row.grant_id!==null&&(row.absolute_expires_at===null||row.absolute_expires_at<=now()||row.grant_revoked_at!==null)))return null;
   const grants=new Set((row.grant_scope??row.scope).split(' '));
   const scopes=row.scope.split(' ').filter(s=>grants.has(s)&&(s!=='mcp:write'||row.allow_write===1));
-  return {clientId:row.client_id,scopes,allowedOwners:JSON.parse(row.allowed_owners)};
+  return {clientId:row.client_id,scopes,allowedOwners:JSON.parse(row.allowed_owners),allowedResources:policyList(row.allowed_resources),allowedTools:policyList(row.allowed_tools)};
 }
 export async function cleanExpired(env: Env): Promise<void> {
   const ts=now();
