@@ -6,7 +6,7 @@ import {ADMIN_SCRIPT,ADMIN_CSS} from './admin-ui.ts';
 import {BRAND_NAME,BRAND_HEAD,BRAND_HEADER} from './brand.ts';
 import {rateLimit} from './oauth.ts';
 import {revokeClientTokens} from './tokens.ts';
-import {renderAdminLogin,renderAdminDocument,renderClientRow,renderPendingRow,renderConnectionRow} from './i18n/zh-CN.ts';
+import {renderAdminLogin,renderAdminDocument,renderClientRow,renderPendingRow,renderConnectionRow,renderRunnerSection} from './i18n/zh-CN.ts';
 import {adminProvisionRunner,adminRevokeRunner,listRunners} from './control/runner-registry.ts';
 
 const COOKIE='__Host-gmcp-admin';
@@ -48,7 +48,7 @@ export async function adminPage(request: Request,env: Env): Promise<Response> {
     return `<tr><td><strong>${escapeHtml(r.displayName)}</strong><div><code>${escapeHtml(r.runnerId)}</code></div></td><td>${escapeHtml(r.capabilities.join(', '))}</td><td>${r.activeConcurrency}/${r.maxConcurrency}</td><td>${escapeHtml(r.availability)}</td><td>${escapeHtml(seen)}</td><td>${action}</td></tr>`;
   }).join('');
   const page=renderAdminDocument({session,BRAND_HEAD,BRAND_NAME,BRAND_HEADER,rows,clientRows,pendingRows});
-  const runnerSection=`<h2>Runner 注册表与资源租约</h2><p>凭据由 Hub 签发且只显示一次。管理员限定 Runner 能力和并发上限；撤销会停用凭据并释放该 Runner 的 Hub 租约。</p><table><thead><tr><th>Runner</th><th>能力</th><th>活动并发 / 上限</th><th>状态</th><th>最近心跳</th><th>操作</th></tr></thead><tbody>${runnerRows||'<tr><td colspan="6">尚未注册 Runner</td></tr>'}</tbody></table><form id="runner-add"><label>Runner 名称<input name="displayName" maxlength="80" required></label><label>允许能力（英文逗号分隔）<input name="capabilities" placeholder="coding.patch,coding.test" required></label><label>最大并发<input name="maxConcurrency" type="number" min="1" max="128" value="1" required></label><button>签发注册凭据</button></form>`;
+  const runnerSection=renderRunnerSection(runnerRows);
   return html(page.replace('</main>',runnerSection+'</main>'));
 }
 async function guard(request: Request,env: Env): Promise<AdminSession | null> {
