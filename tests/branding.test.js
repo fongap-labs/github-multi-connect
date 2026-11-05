@@ -31,7 +31,7 @@ test('independent mark and administration UI cannot be confused with official Gi
 
 test('MCP initialize identifies an independent gateway, not the official server',async()=>{
   const request=new Request(origin+'/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25'}})});
-  const response=await processMcp(request,{}, {scopes:['mcp:read']},MCP_SERVERS[0]);
+  const response=await processMcp(request,{}, {scopes:['mcp:read'],allowedResources:[MCP_SERVERS[0].id],allowedTools:[]},MCP_SERVERS[0]);
   const payload=await response.json();
   assert.equal(payload.result.serverInfo.name,'mcp-hub');
   assert.match(payload.result.serverInfo.title,/Independent/);
