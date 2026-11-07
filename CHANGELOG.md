@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 声明共享 Pre-flight 检查，不复制中央校验器，也不变更生产密钥或部署流程。
+
 - 维护: 新增运维迁移与验收手册，明确环境、密钥、数据迁移和上线核对步骤。
 
 - 修复: MCP Hub 共享 production 部署环境，运行时业务密钥留在 Cloudflare Worker Secrets，不再从中央部署转交。
