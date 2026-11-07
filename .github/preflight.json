@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "checks": [
+    {
+      "id": "types",
+      "command": "npm",
+      "args": [
+        "run",
+        "check"
+      ],
+      "mode": "quick"
+    },
+    {
+      "id": "unit",
+      "command": "npm",
+      "args": [
+        "test"
+      ],
+      "mode": "full"
+    },
+    {
+      "id": "deployment-config",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:deploy"
+      ],
+      "mode": "full"
+    }
+  ]
+}
